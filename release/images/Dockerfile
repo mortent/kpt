@@ -12,15 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name: Markdown
-on:
-  pull_request:
-    branches:
-      - master
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - uses: xt0rted/markdownlint-problem-matcher@v1
-      - run: (cd site && npm run lint-check)
+FROM alpine:3.11
+RUN apk update && apk upgrade && \
+    apk add --no-cache git less man diffutils bash openssh docker-cli && \
+    rm -rf /var/lib/apt/lists/* && \
+    rm /var/cache/apk/*
+COPY kpt /usr/local/bin/kpt
+ENTRYPOINT ["kpt"]
