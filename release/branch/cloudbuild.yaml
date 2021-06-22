@@ -73,7 +73,7 @@ steps:
     dir: 'go/src/github.com/GoogleContainerTools/kpt'
     args: ['build', '-f', 'release/Dockerfile.kpt-build', '-t', 'kpt-builder', '.']
 
-  # run e2e tests and linting
+  # run e2e tests and linting.
   - name: 'kpt-builder'
     args: ['make', 'all']
     env: ['GO111MODULE=on']
