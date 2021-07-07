@@ -437,11 +437,11 @@ ${BIN_DIR}/kpt live apply e2e/live/testdata/rg-test-case-1a > $OUTPUT_DIR/status
 # The ResourceGroup inventory CRD is automatically installed on the initial apply.
 assertContains "installing inventory ResourceGroup CRD"
 assertContains "namespace/rg-test-namespace"
+assertContains "1 resource(s) applied. 0 created, 1 unchanged, 0 configured, 0 failed"
 assertContains "pod/pod-a created"
 assertContains "pod/pod-b created"
 assertContains "pod/pod-c created"
 assertContains "4 resource(s) applied. 3 created, 1 unchanged, 0 configured, 0 failed"
-assertContains "0 resource(s) pruned, 0 skipped, 0 failed"
 wait 2
 # Validate resources in the cluster
 # ConfigMap inventory with four inventory items.
@@ -529,11 +529,11 @@ echo "[ResourceGroup] Testing initial apply dry-run"
 echo "kpt live apply --dry-run e2e/live/testdata/rg-test-case-1a"
 ${BIN_DIR}/kpt live apply --dry-run e2e/live/testdata/rg-test-case-1a > $OUTPUT_DIR/status
 assertContains "namespace/rg-test-namespace created (dry-run)"
+assertContains "1 resource(s) applied. 1 created, 0 unchanged, 0 configured, 0 failed (dry-run)"
 assertContains "pod/pod-a created (dry-run)"
 assertContains "pod/pod-b created (dry-run)"
 assertContains "pod/pod-c created (dry-run)"
 assertContains "4 resource(s) applied. 4 created, 0 unchanged, 0 configured, 0 failed"
-assertContains "0 resource(s) pruned, 0 skipped, 0 failed"
 printResult
 
 # Test: Basic kpt live apply
@@ -544,11 +544,11 @@ ${BIN_DIR}/kpt live apply e2e/live/testdata/rg-test-case-1a > $OUTPUT_DIR/status
 # The ResourceGroup CRD is already installed.
 assertNotContains "installing inventory ResourceGroup CRD"
 assertContains "namespace/rg-test-namespace"
+assertContains "1 resource(s) applied. 0 created, 1 unchanged, 0 configured, 0 failed"
 assertContains "pod/pod-a created"
 assertContains "pod/pod-b created"
 assertContains "pod/pod-c created"
 assertContains "4 resource(s) applied. 3 created, 1 unchanged, 0 configured, 0 failed"
-assertContains "0 resource(s) pruned, 0 skipped, 0 failed"
 wait 2
 # Validate resources in the cluster
 # ConfigMap inventory with four inventory items.
@@ -562,6 +562,7 @@ echo "kpt live apply --dry-run e2e/live/testdata/rg-test-case-1b"
 cp -f e2e/live/testdata/rg-test-case-1a/Kptfile e2e/live/testdata/rg-test-case-1b
 ${BIN_DIR}/kpt live apply --dry-run e2e/live/testdata/rg-test-case-1b > $OUTPUT_DIR/status
 assertContains "namespace/rg-test-namespace configured (dry-run)"
+assertContains "1 resource(s) applied. 0 created, 0 unchanged, 1 configured, 0 failed (dry-run)"
 assertContains "pod/pod-b configured (dry-run)"
 assertContains "pod/pod-c configured (dry-run)"
 assertContains "pod/pod-d created (dry-run)"
@@ -584,6 +585,7 @@ echo "kpt live apply e2e/live/testdata/rg-test-case-1b"
 ${BIN_DIR}/kpt live apply e2e/live/testdata/rg-test-case-1b > $OUTPUT_DIR/status
 assertNotContains "installing inventory ResourceGroup CRD"  # CRD already installed
 assertContains "namespace/rg-test-namespace unchanged"
+assertContains "1 resource(s) applied. 0 created, 1 unchanged, 0 configured, 0 failed"
 assertContains "pod/pod-b unchanged"
 assertContains "pod/pod-c unchanged"
 assertContains "pod/pod-d created"
@@ -607,8 +609,9 @@ ${BIN_DIR}/kpt live destroy --dry-run e2e/live/testdata/rg-test-case-1b > $OUTPU
 assertContains "pod/pod-d deleted (dry-run)"
 assertContains "pod/pod-c deleted (dry-run)"
 assertContains "pod/pod-b deleted (dry-run)"
+assertContains "3 resource(s) deleted, 0 skipped (dry-run)"
 assertContains "namespace/rg-test-namespace deleted (dry-run)"
-assertContains "4 resource(s) deleted, 0 skipped (dry-run)"
+assertContains "4 resource(s) deleted, 0 skipped (dry-run)" # TODO: This is inconcistent with apply..
 # Validate resources NOT DESTROYED in the cluster
 assertPodExists "pod-b" "rg-test-namespace"
 assertPodExists "pod-c" "rg-test-namespace"
@@ -623,6 +626,7 @@ ${BIN_DIR}/kpt live destroy e2e/live/testdata/rg-test-case-1b > $OUTPUT_DIR/stat
 assertContains "pod/pod-d deleted"
 assertContains "pod/pod-c deleted"
 assertContains "pod/pod-b deleted"
+assertContains "3 resource(s) deleted, 0 skipped"
 assertContains "namespace/rg-test-namespace deleted"
 assertContains "4 resource(s) deleted, 0 skipped"
 # Validate resources NOT in the cluster
@@ -676,7 +680,6 @@ assertRGInventory "rbac-error" "1"
 assertContains "configmap/error-config-map apply failed"
 assertContains "configmap/valid-config-map created"
 assertContains "2 resource(s) applied. 1 created, 0 unchanged, 0 configured, 1 failed"
-assertContains "0 resource(s) pruned, 0 skipped, 0 failed"
 printResult
 
 ###########################################################
