@@ -21,7 +21,7 @@ require (
 	k8s.io/client-go v0.21.1
 	k8s.io/klog/v2 v2.9.0
 	k8s.io/kubectl v0.21.1
-	sigs.k8s.io/cli-utils v0.25.1-0.20210603052138-670dee18a123
+	sigs.k8s.io/cli-utils v0.25.1-0.20210702190410-c1a7c2d0409d
 	sigs.k8s.io/kustomize/api v0.8.10 // indirect
 	sigs.k8s.io/kustomize/kyaml v0.10.22-0.20210614195535-7e8ba62e9fd9
 )

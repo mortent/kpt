@@ -20,12 +20,12 @@ import (
 	"k8s.io/kubectl/pkg/util/slice"
 	"sigs.k8s.io/cli-utils/pkg/apply/poller"
 	"sigs.k8s.io/cli-utils/pkg/common"
+	"sigs.k8s.io/cli-utils/pkg/inventory"
 	"sigs.k8s.io/cli-utils/pkg/kstatus/polling"
 	"sigs.k8s.io/cli-utils/pkg/kstatus/polling/aggregator"
 	"sigs.k8s.io/cli-utils/pkg/kstatus/polling/collector"
 	"sigs.k8s.io/cli-utils/pkg/kstatus/polling/event"
 	"sigs.k8s.io/cli-utils/pkg/kstatus/status"
-	"sigs.k8s.io/cli-utils/pkg/provider"
 	"sigs.k8s.io/cli-utils/pkg/util/factory"
 )
 
@@ -40,13 +40,14 @@ var (
 	PollUntilOptions = []string{Known, Current, Deleted, Forever}
 )
 
-func NewRunner(ctx context.Context, provider provider.Provider,
+func NewRunner(ctx context.Context, factory util.Factory,
 	ioStreams genericclioptions.IOStreams) *Runner {
 	r := &Runner{
 		ctx:               ctx,
-		provider:          provider,
 		pollerFactoryFunc: pollerFactoryFunc,
+		invClientFunc:     invClient,
 		ioStreams:         ioStreams,
+		factory:           factory,
 	}
 	c := &cobra.Command{
 		Use:     "status [PKG_PATH | -]",
@@ -67,18 +68,19 @@ func NewRunner(ctx context.Context, provider provider.Provider,
 	return r
 }
 
-func NewCommand(ctx context.Context, provider provider.Provider,
+func NewCommand(ctx context.Context, factory util.Factory,
 	ioStreams genericclioptions.IOStreams) *cobra.Command {
-	return NewRunner(ctx, provider, ioStreams).Command
+	return NewRunner(ctx, factory, ioStreams).Command
 }
 
 // Runner captures the parameters for the command and contains
 // the run function.
 type Runner struct {
-	ctx       context.Context
-	Command   *cobra.Command
-	ioStreams genericclioptions.IOStreams
-	provider  provider.Provider
+	ctx           context.Context
+	Command       *cobra.Command
+	ioStreams     genericclioptions.IOStreams
+	factory       util.Factory
+	invClientFunc func(util.Factory) (inventory.InventoryClient, error)
 
 	period    time.Duration
 	pollUntil string
@@ -114,7 +116,7 @@ func (r *Runner) runE(c *cobra.Command, args []string) error {
 		return err
 	}
 
-	_, inv, err := live.Load(r.provider.Factory(), args[0], c.InOrStdin())
+	_, inv, err := live.Load(r.factory, args[0], c.InOrStdin())
 	if err != nil {
 		return err
 	}
@@ -124,7 +126,7 @@ func (r *Runner) runE(c *cobra.Command, args []string) error {
 		return err
 	}
 
-	invClient, err := r.provider.InventoryClient()
+	invClient, err := r.invClientFunc(r.factory)
 	if err != nil {
 		return err
 	}
@@ -142,7 +144,7 @@ func (r *Runner) runE(c *cobra.Command, args []string) error {
 		return nil
 	}
 
-	statusPoller, err := r.pollerFactoryFunc(r.provider.Factory())
+	statusPoller, err := r.pollerFactoryFunc(r.factory)
 	if err != nil {
 		return err
 	}
@@ -223,4 +225,8 @@ func allKnownNotifierFunc(cancelFunc context.CancelFunc) collector.ObserverFunc 
 
 func pollerFactoryFunc(f util.Factory) (poller.Poller, error) {
 	return factory.NewStatusPoller(f)
+}
+
+func invClient(f util.Factory) (inventory.InventoryClient, error) {
+	return inventory.NewInventoryClient(f, live.WrapInventoryObj, live.InvToUnstructuredFunc)
 }
