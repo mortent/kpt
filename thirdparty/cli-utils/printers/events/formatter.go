@@ -90,7 +90,7 @@ func (ef *formatter) FormatActionGroupEvent(age event.ActionGroupEvent, ags []ev
 	as *list.ApplyStats, ps *list.PruneStats, ds *list.DeleteStats, c list.Collector) error {
 	if age.Action == event.ApplyAction &&
 		age.Type == event.Finished &&
-		list.IsLastActionGroup(age, ags) {
+		list.IsLastActionGroup(age.GroupName, age.Action, ags) {
 		output := fmt.Sprintf("%d resource(s) applied. %d created, %d unchanged, %d configured, %d failed",
 			as.Sum(), as.Created, as.Unchanged, as.Configured, as.Failed)
 		// Only print information about serverside apply if some of the
@@ -103,29 +103,16 @@ func (ef *formatter) FormatActionGroupEvent(age event.ActionGroupEvent, ags []ev
 
 	if age.Action == event.PruneAction &&
 		age.Type == event.Finished &&
-		list.IsLastActionGroup(age, ags) {
+		list.IsLastActionGroup(age.GroupName, age.Action, ags) {
 		ef.print("%d resource(s) pruned, %d skipped, %d failed", ps.Pruned, ps.Skipped, ps.Failed)
 	}
 
 	if age.Action == event.DeleteAction &&
 		age.Type == event.Finished &&
-		list.IsLastActionGroup(age, ags) {
+		list.IsLastActionGroup(age.GroupName, age.Action, ags) {
 		ef.print("%d resource(s) deleted, %d skipped", ds.Deleted, ds.Skipped)
 	}
 
-	if age.Action == event.WaitAction && age.Type == event.Started {
-		ag, found := list.ActionGroupByName(age.GroupName, ags)
-		if !found {
-			panic(fmt.Errorf("unknown action group name %q", age.GroupName))
-		}
-		for id, se := range c.LatestStatus() {
-			// Only print information about objects that we actually care about
-			// for this wait task.
-			if found := object.ObjMetas(ag.Identifiers).Contains(id); found {
-				ef.printResourceStatus(id, se)
-			}
-		}
-	}
 	return nil
 }
 

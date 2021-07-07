@@ -115,7 +115,7 @@ func (sc *StatusCollector) LatestStatus() map[object.ObjMetadata]event.StatusEve
 // this should probably be an interface.
 // This function will block until the channel is closed.
 //nolint:gocyclo
-func (b *BaseListPrinter) Print(ch <-chan event.Event, previewStrategy common.DryRunStrategy, printStatus bool) error {
+func (b *BaseListPrinter) Print(ch <-chan event.Event, previewStrategy common.DryRunStrategy, _ bool) error {
 	var actionGroups []event.ActionGroup
 	applyStats := &ApplyStats{}
 	pruneStats := &PruneStats{}
@@ -123,11 +123,13 @@ func (b *BaseListPrinter) Print(ch <-chan event.Event, previewStrategy common.Dr
 	statusCollector := &StatusCollector{
 		latestStatus: make(map[object.ObjMetadata]event.StatusEvent),
 	}
+	printStatus := false
 	formatter := b.FormatterFactory(previewStrategy)
 	for e := range ch {
 		switch e.Type {
 		case event.InitType:
 			actionGroups = e.InitEvent.ActionGroups
+			fmt.Printf("### Groups: %v\n", actionGroups)
 		case event.ErrorType:
 			_ = formatter.FormatErrorEvent(e.ErrorEvent)
 			return e.ErrorEvent.Err
@@ -177,6 +179,29 @@ func (b *BaseListPrinter) Print(ch <-chan event.Event, previewStrategy common.Dr
 				pruneStats, deleteStats, statusCollector); err != nil {
 				return err
 			}
+
+			if e.ActionGroupEvent.Action == event.WaitAction &&
+					e.ActionGroupEvent.Type == event.Started {
+				age := e.ActionGroupEvent
+				if action, isLast := isAfterLastActionGroup(age.GroupName, actionGroups); isLast {
+					printStatus = true
+
+					ids := IDsByActionGroupAction(action, actionGroups)
+					for id, se := range statusCollector.LatestStatus() {
+						// Only print information about objects that we actually care about
+						// for this wait task.
+						if found := ids.Contains(id); found {
+							if err := formatter.FormatStatusEvent(se); err != nil {
+								return err
+							}
+						}
+					}
+				}
+			}
+
+			if e.ActionGroupEvent.Type == event.Finished {
+				printStatus = false
+			}
 		}
 	}
 	failedSum := applyStats.Failed + pruneStats.Failed + deleteStats.Failed
@@ -195,22 +220,47 @@ func ActionGroupByName(name string, ags []event.ActionGroup) (event.ActionGroup,
 	return event.ActionGroup{}, false
 }
 
+func IDsByActionGroupAction(action event.ResourceAction, ags []event.ActionGroup) object.ObjMetas {
+	var ids []object.ObjMetadata
+	for _, ag := range ags {
+		if ag.Action == action {
+			ids = append(ids, ag.Identifiers...)
+		}
+	}
+	return ids
+}
+
 // IsLastActionGroup returns true if the passed ActionGroupEvent is the
 // last of its type in the slice of ActionGroup; false otherwise. For example,
 // this function will determine if an ApplyAction is the last ApplyAction in
 // the initialized task queue. This functionality is current used to determine
 // when to print stats.
-func IsLastActionGroup(age event.ActionGroupEvent, ags []event.ActionGroup) bool {
+func IsLastActionGroup(groupName string, eventAction event.ResourceAction, ags []event.ActionGroup) bool {
 	var found bool
 	var action event.ResourceAction
 	for _, ag := range ags {
 		if found && (action == ag.Action) {
 			return false
 		}
-		if age.GroupName == ag.Name {
+		if groupName == ag.Name {
 			found = true
-			action = age.Action
+			action = eventAction
 		}
 	}
 	return true
+}
+
+func isAfterLastActionGroup(groupName string, ags []event.ActionGroup) (event.ResourceAction, bool) {
+	index := 0
+	for i, ag := range ags {
+		if groupName == ag.Name {
+			index = i
+		}
+	}
+
+	if index == 0 {
+		return event.ResourceAction(0), false
+	}
+	previousGroup := ags[index]
+	return previousGroup.Action, IsLastActionGroup(previousGroup.Name, previousGroup.Action, ags)
 }
