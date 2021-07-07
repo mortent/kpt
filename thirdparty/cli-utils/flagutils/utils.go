@@ -16,6 +16,22 @@ const (
 	InventoryPolicyAdopt  = "adopt"
 )
 
+// ConvertPropagationPolicy converts a propagationPolicy described as a
+// string to a DeletionPropagation type that is passed into the Applier.
+func ConvertPropagationPolicy(propagationPolicy string) (metav1.DeletionPropagation, error) {
+	switch propagationPolicy {
+	case string(metav1.DeletePropagationForeground):
+		return metav1.DeletePropagationForeground, nil
+	case string(metav1.DeletePropagationBackground):
+		return metav1.DeletePropagationBackground, nil
+	case string(metav1.DeletePropagationOrphan):
+		return metav1.DeletePropagationOrphan, nil
+	default:
+		return metav1.DeletePropagationBackground, fmt.Errorf(
+			"prune propagation policy must be one of Background, Foreground, Orphan")
+	}
+}
+
 func ConvertInventoryPolicy(policy string) (inventory.InventoryPolicy, error) {
 	switch policy {
 	case InventoryPolicyStrict:
@@ -35,20 +51,4 @@ func PathFromArgs(args []string) string {
 		return "-"
 	}
 	return args[0]
-}
-
-// ConvertPropagationPolicy converts a propagationPolicy described as a
-// string to a DeletionPropagation type that is passed into the Applier.
-func ConvertPropagationPolicy(propagationPolicy string) (metav1.DeletionPropagation, error) {
-	switch propagationPolicy {
-	case string(metav1.DeletePropagationForeground):
-		return metav1.DeletePropagationForeground, nil
-	case string(metav1.DeletePropagationBackground):
-		return metav1.DeletePropagationBackground, nil
-	case string(metav1.DeletePropagationOrphan):
-		return metav1.DeletePropagationOrphan, nil
-	default:
-		return metav1.DeletePropagationBackground, fmt.Errorf(
-			"prune propagation policy must be one of Background, Foreground, Orphan")
-	}
 }
