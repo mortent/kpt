@@ -151,7 +151,7 @@ func TestPathManifestReader_Read(t *testing.T) {
 				"cr.yaml": cr,
 			},
 			namespace:      "test-namespace",
-			expectedErrMsg: "unknown resource types: custom.io/v1, Kind=Custom",
+			expectedErrMsg: "unknown resource types: custom.io/v1/Custom",
 		},
 		"local-config is filtered out": {
 			manifests: map[string]string{

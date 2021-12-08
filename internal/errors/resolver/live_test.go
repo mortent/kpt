@@ -17,59 +17,15 @@ package resolver
 import (
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/GoogleContainerTools/kpt/internal/errors"
 	"github.com/stretchr/testify/assert"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"sigs.k8s.io/cli-utils/pkg/apply/taskrunner"
-	"sigs.k8s.io/cli-utils/pkg/kstatus/status"
-	"sigs.k8s.io/cli-utils/pkg/object"
 )
 
 func TestLiveErrorResolver(t *testing.T) {
 	testCases := map[string]struct {
 		err      error
 		expected string
-	}{
-		"nested timeoutError": {
-			err: &errors.Error{
-				Err: &taskrunner.TimeoutError{
-					Identifiers: []object.ObjMetadata{
-						{
-							GroupKind: schema.GroupKind{
-								Group: "apps",
-								Kind:  "Deployment",
-							},
-							Name:      "test",
-							Namespace: "test-ns",
-						},
-					},
-					Condition: taskrunner.AllCurrent,
-					Timeout:   3 * time.Second,
-					TimedOutResources: []taskrunner.TimedOutResource{
-						{
-							Identifier: object.ObjMetadata{
-								GroupKind: schema.GroupKind{
-									Group: "apps",
-									Kind:  "Deployment",
-								},
-								Name:      "test",
-								Namespace: "test-ns",
-							},
-							Status:  status.InProgressStatus,
-							Message: "this is a test",
-						},
-					},
-				},
-			},
-			expected: `
-Error: Timeout after 3 seconds waiting for 1 out of 1 resources to reach condition AllCurrent:
-
-Deployment/test InProgress this is a test
-`,
-		},
-	}
+	}{}
 
 	for tn, tc := range testCases {
 		t.Run(tn, func(t *testing.T) {
