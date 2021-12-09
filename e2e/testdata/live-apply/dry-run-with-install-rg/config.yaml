@@ -5,8 +5,8 @@ kptArgs:
 output:
   events:
     stdOut: |
-      deployment.apps/nginx-deployment created (dry-run)
-      1 resource(s) applied. 1 created, 0 unchanged, 0 configured, 0 failed (dry-run)
+      deployment.apps/nginx-deployment created (preview)
+      1 resource(s) applied. 1 created, 0 unchanged, 0 configured, 0 failed (preview)
     stdErr: |
       installing inventory ResourceGroup CRD.
   json:

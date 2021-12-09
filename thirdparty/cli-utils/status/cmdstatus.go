@@ -6,6 +6,8 @@ package status
 import (
 	"context"
 	"fmt"
+	"github.com/GoogleContainerTools/kpt/internal/util/liveutil"
+
 	"os"
 	"time"
 
@@ -14,7 +16,6 @@ import (
 	"github.com/GoogleContainerTools/kpt/internal/util/argutil"
 	"github.com/GoogleContainerTools/kpt/internal/util/strings"
 	"github.com/GoogleContainerTools/kpt/pkg/live"
-	"github.com/GoogleContainerTools/kpt/thirdparty/cli-utils/printers"
 	statusprinters "github.com/GoogleContainerTools/kpt/thirdparty/cli-utils/status/printers"
 	"github.com/go-errors/errors"
 	"github.com/spf13/cobra"
@@ -95,7 +96,7 @@ func (r *Runner) preRunE(*cobra.Command, []string) error {
 			strings.JoinStringsWithQuotes(PollUntilOptions))
 	}
 
-	if found := printers.ValidatePrinterType(r.output); !found {
+	if found := liveutil.ValidatePrinterType(r.output); !found {
 		return fmt.Errorf("unknown output type %q", r.output)
 	}
 	return nil

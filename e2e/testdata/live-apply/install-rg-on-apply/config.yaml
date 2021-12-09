@@ -4,12 +4,18 @@ output:
     stdOut: |
       deployment.apps/nginx-deployment created
       1 resource(s) applied. 1 created, 0 unchanged, 0 configured, 0 failed
+      deployment.apps/nginx-deployment reconcile pending
+      deployment.apps/nginx-deployment reconciled
+      1 resource(s) reconciled, 0 skipped
     stdErr: |
       installing inventory ResourceGroup CRD.
   json:
     stdOut: |
       {"eventType":"resourceApplied","group":"apps","kind":"Deployment","name":"nginx-deployment","namespace":"install-rg-on-apply","operation":"Created","timestamp":"<TIMESTAMP>","type":"apply"}
       {"configuredCount":0,"count":1,"createdCount":1,"eventType":"completed","failedCount":0,"serverSideCount":0,"timestamp":"<TIMESTAMP>","type":"apply","unchangedCount":0}
+      {"eventType":"resourceReconciled","group":"apps","kind":"Deployment","name":"nginx-deployment","namespace":"install-rg-on-apply","operation":"Pending","timestamp":"<TIMESTAMP>","type":"wait"}
+      {"eventType":"resourceReconciled","group":"apps","kind":"Deployment","name":"nginx-deployment","namespace":"install-rg-on-apply","operation":"Reconciled","timestamp":"<TIMESTAMP>","type":"wait"}
+      {"eventType":"completed","failed":0,"reconciled":1,"skipped":0,"timeout":0,"timestamp":"<TIMESTAMP>","type":"wait"}
     stdErr: |
       installing inventory ResourceGroup CRD.
 inventory:

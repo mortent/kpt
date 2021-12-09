@@ -17,6 +17,7 @@ package cmdapply
 import (
 	"context"
 	"fmt"
+	"github.com/GoogleContainerTools/kpt/internal/util/liveutil"
 	"os"
 	"time"
 
@@ -25,16 +26,16 @@ import (
 	"github.com/GoogleContainerTools/kpt/internal/util/argutil"
 	"github.com/GoogleContainerTools/kpt/internal/util/strings"
 	"github.com/GoogleContainerTools/kpt/pkg/live"
-	"github.com/GoogleContainerTools/kpt/thirdparty/cli-utils/flagutils"
-	"github.com/GoogleContainerTools/kpt/thirdparty/cli-utils/printers"
 	"github.com/spf13/cobra"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/kubectl/pkg/cmd/util"
+	"sigs.k8s.io/cli-utils/cmd/flagutils"
 	"sigs.k8s.io/cli-utils/pkg/apply"
 	"sigs.k8s.io/cli-utils/pkg/common"
 	"sigs.k8s.io/cli-utils/pkg/inventory"
+	"sigs.k8s.io/cli-utils/pkg/printers"
 )
 
 // NewRunner returns a command runner
@@ -80,6 +81,10 @@ func NewRunner(ctx context.Context, factory util.Factory,
 		"If true, install the inventory ResourceGroup CRD before applying.")
 	c.Flags().BoolVar(&r.dryRun, "dry-run", false,
 		"dry-run apply for the resources in the package.")
+	c.Flags().DurationVar(&r.timeout, "timeout", 0,
+		"How long to wait before exiting")
+	c.Flags().BoolVar(&r.printStatusEvents, "status-events", false,
+		"Print status events (always enabled for table output)")
 	return r
 }
 
@@ -105,6 +110,8 @@ type Runner struct {
 	pruneTimeout                 time.Duration
 	inventoryPolicyString        string
 	dryRun                       bool
+	timeout						 time.Duration
+	printStatusEvents			 bool
 
 	inventoryPolicy inventory.InventoryPolicy
 	prunePropPolicy v1.DeletionPropagation
@@ -125,7 +132,7 @@ func (r *Runner) preRunE(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	if found := printers.ValidatePrinterType(r.output); !found {
+	if found := liveutil.ValidatePrinterType(r.output); !found {
 		return fmt.Errorf("unknown output type %q", r.output)
 	}
 
@@ -194,6 +201,14 @@ func (r *Runner) runE(c *cobra.Command, args []string) error {
 
 func runApply(r *Runner, invInfo inventory.InventoryInfo, objs []*unstructured.Unstructured,
 	dryRunStrategy common.DryRunStrategy) error {
+	ctx := r.ctx
+	// If specified, cancel with timeout.
+	if r.timeout != 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, r.timeout)
+		defer cancel()
+	}
+
 	if r.installCRD {
 		f := r.factory
 		// Only install the ResourceGroup CRD if it is not already installed.
@@ -231,5 +246,5 @@ func runApply(r *Runner, invInfo inventory.InventoryInfo, objs []*unstructured.U
 	// The printer will print updates from the channel. It will block
 	// until the channel is closed.
 	printer := printers.GetPrinter(r.output, r.ioStreams)
-	return printer.Print(ch, dryRunStrategy)
+	return printer.Print(ch, dryRunStrategy, r.printStatusEvents)
 }

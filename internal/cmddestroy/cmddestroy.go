@@ -17,20 +17,22 @@ package cmddestroy
 import (
 	"context"
 	"fmt"
+	"github.com/GoogleContainerTools/kpt/internal/util/liveutil"
 	"os"
+	"time"
 
 	"github.com/GoogleContainerTools/kpt/internal/docs/generated/livedocs"
 	"github.com/GoogleContainerTools/kpt/internal/util/argutil"
 	"github.com/GoogleContainerTools/kpt/internal/util/strings"
 	"github.com/GoogleContainerTools/kpt/pkg/live"
-	"github.com/GoogleContainerTools/kpt/thirdparty/cli-utils/flagutils"
-	"github.com/GoogleContainerTools/kpt/thirdparty/cli-utils/printers"
 	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/kubectl/pkg/cmd/util"
+	"sigs.k8s.io/cli-utils/cmd/flagutils"
 	"sigs.k8s.io/cli-utils/pkg/apply"
 	"sigs.k8s.io/cli-utils/pkg/common"
 	"sigs.k8s.io/cli-utils/pkg/inventory"
+	"sigs.k8s.io/cli-utils/pkg/printers"
 )
 
 func NewRunner(ctx context.Context, factory util.Factory,
@@ -59,6 +61,10 @@ func NewRunner(ctx context.Context, factory util.Factory,
 			fmt.Sprintf("%q and %q.", flagutils.InventoryPolicyStrict, flagutils.InventoryPolicyAdopt))
 	c.Flags().BoolVar(&r.dryRun, "dry-run", false,
 		"dry-run apply for the resources in the package.")
+	c.Flags().DurationVar(&r.timeout, "timeout", 0,
+		"How long to wait before exiting")
+	c.Flags().BoolVar(&r.printStatusEvents, "status-events", false,
+		"Print status events (always enabled for table output)")
 	return r
 }
 
@@ -80,6 +86,8 @@ type Runner struct {
 	output                string
 	inventoryPolicyString string
 	dryRun                bool
+	timeout               time.Duration
+	printStatusEvents     bool
 
 	inventoryPolicy inventory.InventoryPolicy
 
@@ -96,7 +104,7 @@ func (r *Runner) preRunE(_ *cobra.Command, _ []string) error {
 		return err
 	}
 
-	if found := printers.ValidatePrinterType(r.output); !found {
+	if found := liveutil.ValidatePrinterType(r.output); !found {
 		return fmt.Errorf("unknown output type %q", r.output)
 	}
 
@@ -151,6 +159,13 @@ func (r *Runner) runE(c *cobra.Command, args []string) error {
 }
 
 func runDestroy(r *Runner, inv inventory.InventoryInfo, dryRunStrategy common.DryRunStrategy) error {
+	// If specified, cancel with timeout.
+	ctx := r.ctx
+	if r.timeout != 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, r.timeout)
+		defer cancel()
+	}
 	// Run the destroyer. It will return a channel where we can receive updates
 	// to keep track of progress and any issues.
 	invClient, err := inventory.NewInventoryClient(r.factory, live.WrapInventoryObj, live.InvToUnstructuredFunc)
@@ -170,5 +185,5 @@ func runDestroy(r *Runner, inv inventory.InventoryInfo, dryRunStrategy common.Dr
 	// The printer will print updates from the channel. It will block
 	// until the channel is closed.
 	printer := printers.GetPrinter(r.output, r.ioStreams)
-	return printer.Print(ch, dryRunStrategy)
+	return printer.Print(ch, dryRunStrategy, r.printStatusEvents)
 }

@@ -18,6 +18,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/GoogleContainerTools/kpt/thirdparty/cli-utils/status"
 	"os"
 
 	"github.com/GoogleContainerTools/kpt/internal/cmdapply"
@@ -26,7 +27,6 @@ import (
 	"github.com/GoogleContainerTools/kpt/internal/cmdmigrate"
 	"github.com/GoogleContainerTools/kpt/internal/docs/generated/livedocs"
 	"github.com/GoogleContainerTools/kpt/internal/util/cfgflags"
-	"github.com/GoogleContainerTools/kpt/thirdparty/cli-utils/status"
 	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/klog/v2"
