@@ -79,6 +79,8 @@ type ParentReference struct {
 // PackageRevisionStatus defines the observed state of PackageRevision
 type PackageRevisionStatus struct {
 	UpstreamLock *UpstreamLock `json:"upstreamLock,omitempty"`
+
+	Tasks []TaskStatus `json:"tasks,omitempty"`
 }
 
 type TaskType string
@@ -292,4 +294,10 @@ type GitLock struct {
 	// Commit is the SHA-1 for the last fetch of the package.
 	// This is set by kpt for bookkeeping purposes.
 	Commit string `yaml:"commit,omitempty" json:"commit,omitempty"`
+}
+
+type TaskStatus struct {
+	Author string `json:"author,omitempty"`
+
+	Timestamp metav1.Time `json:"timestamp,omitempty"`
 }
