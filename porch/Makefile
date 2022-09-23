@@ -155,6 +155,7 @@ PORCH = $(BUILDDIR)/porch
 run-local: porch
 	KUBECONFIG=$(KUBECONFIG) kubectl apply -f deployments/local/localconfig.yaml
 	KUBECONFIG=$(KUBECONFIG) kubectl apply -f api/porchconfig/v1alpha1/
+	KUBECONFIG=$(KUBECONFIG) kubectl apply -f internal/api/porchinternal/v1alpha1/
 	$(PORCH) \
 	--secure-port 9443 \
 	--standalone-debug-mode \

@@ -21,6 +21,7 @@ import (
 	"github.com/GoogleContainerTools/kpt/internal/fnruntime"
 	"github.com/GoogleContainerTools/kpt/porch/api/porch/install"
 	configapi "github.com/GoogleContainerTools/kpt/porch/api/porchconfig/v1alpha1"
+	internalapi "github.com/GoogleContainerTools/kpt/porch/internal/api/porchinternal/v1alpha1"
 	"github.com/GoogleContainerTools/kpt/porch/pkg/cache"
 	"github.com/GoogleContainerTools/kpt/porch/pkg/engine"
 	"github.com/GoogleContainerTools/kpt/porch/pkg/kpt"
@@ -146,6 +147,9 @@ func (c completedConfig) getCoreClient() (client.WithWatch, error) {
 		return nil, fmt.Errorf("error building scheme: %w", err)
 	}
 	if err := corev1.AddToScheme(scheme); err != nil {
+		return nil, fmt.Errorf("error building scheme: %w", err)
+	}
+	if err := internalapi.AddToScheme(scheme); err != nil {
 		return nil, fmt.Errorf("error building scheme: %w", err)
 	}
 

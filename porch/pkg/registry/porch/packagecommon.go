@@ -21,11 +21,13 @@ import (
 	unversionedapi "github.com/GoogleContainerTools/kpt/porch/api/porch"
 	api "github.com/GoogleContainerTools/kpt/porch/api/porch/v1alpha1"
 	configapi "github.com/GoogleContainerTools/kpt/porch/api/porchconfig/v1alpha1"
+	internalapi "github.com/GoogleContainerTools/kpt/porch/internal/api/porchinternal/v1alpha1"
 	"github.com/GoogleContainerTools/kpt/porch/pkg/cache"
 	"github.com/GoogleContainerTools/kpt/porch/pkg/engine"
 	"github.com/GoogleContainerTools/kpt/porch/pkg/repository"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -47,7 +49,7 @@ type packageCommon struct {
 	createStrategy SimpleRESTCreateStrategy
 }
 
-func (r *packageCommon) listPackageRevisions(ctx context.Context, filter packageRevisionFilter, callback func(p repository.PackageRevision) error) error {
+func (r *packageCommon) listPackageRevisions(ctx context.Context, filter packageRevisionFilter, selector labels.Selector, callback func(p repository.PackageRevision, i *internalapi.InternalPackageRevision) error) error {
 	var opts []client.ListOption
 	if ns, namespaced := genericapirequest.NamespaceFrom(ctx); namespaced {
 		opts = append(opts, client.InNamespace(ns))
@@ -80,7 +82,17 @@ func (r *packageCommon) listPackageRevisions(ctx context.Context, filter package
 			return err
 		}
 		for _, rev := range revisions {
-			if err := callback(rev); err != nil {
+			internalPkgRev, err := r.getInternalPkgRev(ctx, rev.KubeObjectName(), rev.KubeObjectNamespace())
+			if err != nil {
+				return err
+			}
+			// We just match against the internal InternalPackageRevision CR here since
+			// it contains the labels for PackageRevision and PackageRevisionResources.
+			if selector != nil && !selector.Matches(labels.Set(internalPkgRev.Labels)) {
+				continue
+			}
+
+			if err := callback(rev, internalPkgRev); err != nil {
 				return err
 			}
 		}
@@ -170,7 +182,7 @@ func (r *packageCommon) getRepositoryObj(ctx context.Context, ns string, reposit
 	return &repositoryObj, nil
 }
 
-func (r *packageCommon) getPackageRevision(ctx context.Context, name string) (repository.PackageRevision, error) {
+func (r *packageCommon) getRepoPkgRev(ctx context.Context, name string) (repository.PackageRevision, error) {
 	repo, err := r.openRepository(ctx, name)
 	if err != nil {
 		return nil, err
@@ -219,7 +231,7 @@ func (r *packageCommon) updatePackageRevision(ctx context.Context, name string, 
 	// isCreate tracks whether this is an update that creates an object (this happens in server-side apply)
 	isCreate := false
 
-	oldPackage, err := r.getPackageRevision(ctx, name)
+	oldRepoPkgRev, err := r.getRepoPkgRev(ctx, name)
 	if err != nil {
 		if forceAllowCreate && apierrors.IsNotFound(err) {
 			// For server-side apply, we can create the object here
@@ -229,12 +241,17 @@ func (r *packageCommon) updatePackageRevision(ctx context.Context, name string, 
 		}
 	}
 
-	var oldRuntimeObj runtime.Object // We have to be runtime.Object (and not *api.PackageRevision) or else nil-checks fail (because a nil object is not a nil interface)
+	var oldApiPkgRev runtime.Object // We have to be runtime.Object (and not *api.PackageRevision) or else nil-checks fail (because a nil object is not a nil interface)
+	var oldInternalPkgRev *internalapi.InternalPackageRevision
 	if !isCreate {
-		oldRuntimeObj = oldPackage.GetPackageRevision()
+		oldInternalPkgRev, err = r.getInternalPkgRev(ctx, oldRepoPkgRev.KubeObjectName(), ns)
+		if err != nil {
+			return nil, false, err
+		}
+		oldApiPkgRev = r.toApiPackageRevision(oldRepoPkgRev, oldInternalPkgRev)
 	}
 
-	newRuntimeObj, err := objInfo.UpdatedObject(ctx, oldRuntimeObj)
+	newRuntimeObj, err := objInfo.UpdatedObject(ctx, oldApiPkgRev)
 	if err != nil {
 		klog.Infof("update failed to construct UpdatedObject: %v", err)
 		return nil, false, err
@@ -251,12 +268,12 @@ func (r *packageCommon) updatePackageRevision(ctx context.Context, name string, 
 		newRuntimeObj = typed
 	}
 
-	if err := r.validateUpdate(ctx, newRuntimeObj, oldRuntimeObj, isCreate, createValidation,
+	if err := r.validateUpdate(ctx, newRuntimeObj, oldApiPkgRev, isCreate, createValidation,
 		updateValidation, "PackageRevision", name); err != nil {
 		return nil, false, err
 	}
 
-	newObj, ok := newRuntimeObj.(*api.PackageRevision)
+	newApiPkgRev, ok := newRuntimeObj.(*api.PackageRevision)
 	if !ok {
 		return nil, false, apierrors.NewBadRequest(fmt.Sprintf("expected PackageRevision object, got %T", newRuntimeObj))
 	}
@@ -266,7 +283,7 @@ func (r *packageCommon) updatePackageRevision(ctx context.Context, name string, 
 		return nil, false, apierrors.NewBadRequest(fmt.Sprintf("invalid name %q", name))
 	}
 	if isCreate {
-		repositoryName = newObj.Spec.RepositoryName
+		repositoryName = newApiPkgRev.Spec.RepositoryName
 		if repositoryName == "" {
 			return nil, false, apierrors.NewBadRequest(fmt.Sprintf("invalid repositoryName %q", name))
 		}
@@ -282,23 +299,34 @@ func (r *packageCommon) updatePackageRevision(ctx context.Context, name string, 
 	}
 
 	if !isCreate {
-		rev, err := r.cad.UpdatePackageRevision(ctx, &repositoryObj, oldPackage, oldRuntimeObj.(*api.PackageRevision), newObj)
+		rev, err := r.cad.UpdatePackageRevision(ctx, &repositoryObj, oldRepoPkgRev, oldApiPkgRev.(*api.PackageRevision), newApiPkgRev)
 		if err != nil {
 			return nil, false, apierrors.NewInternalError(err)
 		}
-
 		updated := rev.GetPackageRevision()
+
+		newInternalPkgRev, err := r.updateInternalPkgRevFromPkgRev(ctx, oldInternalPkgRev, newApiPkgRev)
+		if err != nil {
+			return nil, false, err
+		}
+		r.amendApiPkgRevWithMetadata(updated, newInternalPkgRev)
 
 		return updated, false, nil
 	} else {
-		rev, err := r.cad.CreatePackageRevision(ctx, &repositoryObj, newObj)
+		rev, err := r.cad.CreatePackageRevision(ctx, &repositoryObj, newApiPkgRev)
 		if err != nil {
 			klog.Infof("error creating package: %v", err)
 			return nil, false, apierrors.NewInternalError(err)
 		}
+		createdApiPkgRev := rev.GetPackageRevision()
 
-		created := rev.GetPackageRevision()
-		return created, true, nil
+		internalPkgRev, err := r.createInternalPkgRev(ctx, createdApiPkgRev, newApiPkgRev)
+		if err != nil {
+			return nil, false, err
+		}
+		r.amendApiPkgRevWithMetadata(createdApiPkgRev, internalPkgRev)
+
+		return createdApiPkgRev, true, nil
 	}
 }
 
@@ -453,4 +481,68 @@ func (r *packageCommon) validateUpdate(ctx context.Context, newRuntimeObj runtim
 
 	r.updateStrategy.Canonicalize(newRuntimeObj)
 	return nil
+}
+
+func (r *packageCommon) toApiPackageRevision(repoPackageRevision repository.PackageRevision, internalPkgRev *internalapi.InternalPackageRevision) *api.PackageRevision {
+	apiPkgRev := repoPackageRevision.GetPackageRevision()
+	r.amendApiPkgRevWithMetadata(apiPkgRev, internalPkgRev)
+	return apiPkgRev
+}
+
+func (r *packageCommon) amendApiPkgRevWithMetadata(apiPkgRev *api.PackageRevision, internalPkgRev *internalapi.InternalPackageRevision) {
+	apiPkgRev.Labels = internalPkgRev.Labels
+	apiPkgRev.Annotations = internalPkgRev.Annotations
+}
+
+func (r *packageCommon) getApiPkgRev(ctx context.Context, repoPkgRev repository.PackageRevision, ns string) (*api.PackageRevision, error) {
+	internalPkgRev, err := r.getInternalPkgRev(ctx, repoPkgRev.KubeObjectName(), ns)
+	if err != nil {
+		return nil, err
+	}
+	return r.toApiPackageRevision(repoPkgRev, internalPkgRev), nil
+}
+
+func (r *packageCommon) getInternalPkgRev(ctx context.Context, name, ns string) (*internalapi.InternalPackageRevision, error) {
+	var prs internalapi.InternalPackageRevision
+	err := r.coreClient.Get(ctx, types.NamespacedName{Name: name, Namespace: ns}, &prs)
+	if err != nil {
+		return nil, err
+	}
+	return &prs, nil
+}
+
+func (r *packageCommon) createInternalPkgRev(ctx context.Context, createdApiPkgRev, newApiPkgRev *api.PackageRevision) (*internalapi.InternalPackageRevision, error) {
+	internalPkgRev := internalapi.InternalPackageRevision{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        createdApiPkgRev.Name,
+			Namespace:   createdApiPkgRev.Namespace,
+			Labels:      newApiPkgRev.Labels,
+			Annotations: newApiPkgRev.Annotations,
+		},
+	}
+	if err := r.coreClient.Create(ctx, &internalPkgRev); err != nil {
+		return nil, err
+	}
+	return &internalPkgRev, nil
+}
+
+func (r *packageCommon) updateInternalPkgRevFromPkgRev(ctx context.Context, internalPkgRev *internalapi.InternalPackageRevision, updatedApiPkgRev *api.PackageRevision) (*internalapi.InternalPackageRevision, error) {
+	newInternalPkgRev := internalPkgRev.DeepCopy()
+	newInternalPkgRev.Labels = updatedApiPkgRev.Labels
+	newInternalPkgRev.Annotations = updatedApiPkgRev.Annotations
+	err := r.coreClient.Update(ctx, newInternalPkgRev)
+	return newInternalPkgRev, err
+}
+
+func (r *packageCommon) updateInternalPkgRevFromPkgResources(ctx context.Context, internalPkgRev *internalapi.InternalPackageRevision, updatedApiPkgResources *api.PackageRevisionResources) (*internalapi.InternalPackageRevision, error) {
+	newInternalPkgRev := internalPkgRev.DeepCopy()
+	newInternalPkgRev.Labels = updatedApiPkgResources.Labels
+	newInternalPkgRev.Annotations = updatedApiPkgResources.Annotations
+	err := r.coreClient.Update(ctx, newInternalPkgRev)
+	return newInternalPkgRev, err
+}
+
+func (r packageCommon) amendApiPkgResourcesWithMetadata(apiPkgResources *api.PackageRevisionResources, internalPkgRev *internalapi.InternalPackageRevision) {
+	apiPkgResources.Labels = internalPkgRev.Labels
+	apiPkgResources.Annotations = internalPkgRev.Annotations
 }
