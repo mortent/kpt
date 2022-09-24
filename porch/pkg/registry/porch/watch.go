@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"sync"
 
-	internalapi "github.com/GoogleContainerTools/kpt/porch/internal/api/porchinternal/v1alpha1"
 	"github.com/GoogleContainerTools/kpt/porch/pkg/repository"
 	"go.opentelemetry.io/otel/trace"
 	metainternalversion "k8s.io/apimachinery/pkg/apis/meta/internalversion"
@@ -133,7 +132,7 @@ func (w *watcher) listAndWatchInner(ctx context.Context, r *packageRevisionResou
 	}
 
 	// TODO: Only if rv == 0?
-	if err := r.packageCommon.listPackageRevisions(ctx, filter, selector, func(p repository.PackageRevision, i *internalapi.InternalPackageRevision) error {
+	if err := r.packageCommon.listPackageRevisions(ctx, filter, selector, func(p repository.PackageRevision) error {
 		obj, err := p.GetResources(ctx)
 		if err != nil {
 			done = true

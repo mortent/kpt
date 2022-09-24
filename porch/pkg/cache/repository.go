@@ -21,9 +21,13 @@ import (
 	"time"
 
 	"github.com/GoogleContainerTools/kpt/porch/api/porch/v1alpha1"
+	configapi "github.com/GoogleContainerTools/kpt/porch/api/porchconfig/v1alpha1"
+	internalapi "github.com/GoogleContainerTools/kpt/porch/internal/api/porchinternal/v1alpha1"
+	"github.com/GoogleContainerTools/kpt/porch/pkg/meta"
 	"github.com/GoogleContainerTools/kpt/porch/pkg/repository"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/klog/v2"
 )
@@ -40,9 +44,10 @@ var _ repository.Repository = &cachedRepository{}
 var _ repository.FunctionRepository = &cachedRepository{}
 
 type cachedRepository struct {
-	id     string
-	repo   repository.Repository
-	cancel context.CancelFunc
+	id       string
+	repoSpec *configapi.Repository
+	repo     repository.Repository
+	cancel   context.CancelFunc
 
 	mutex                  sync.Mutex
 	cachedPackageRevisions map[repository.PackageRevisionKey]*cachedPackageRevision
@@ -56,15 +61,19 @@ type cachedRepository struct {
 	refreshPkgsError      error
 
 	objectCache *objectCache
+
+	metadataStore meta.MetadataStore
 }
 
-func newRepository(id string, repo repository.Repository, objectCache *objectCache) *cachedRepository {
+func newRepository(id string, repoSpec *configapi.Repository, repo repository.Repository, objectCache *objectCache, metadataStore meta.MetadataStore) *cachedRepository {
 	ctx, cancel := context.WithCancel(context.Background())
 	r := &cachedRepository{
-		id:          id,
-		repo:        repo,
-		cancel:      cancel,
-		objectCache: objectCache,
+		id:            id,
+		repoSpec:      repoSpec,
+		repo:          repo,
+		cancel:        cancel,
+		objectCache:   objectCache,
+		metadataStore: metadataStore,
 	}
 
 	// TODO: Should we fetch the packages here?
@@ -200,12 +209,12 @@ func (r *cachedRepository) UpdatePackageRevision(ctx context.Context, old reposi
 	}, nil
 }
 
-func (r *cachedRepository) update(updated repository.PackageRevision) (*cachedPackageRevision, error) {
+func (r *cachedRepository) update(ctx context.Context, updated repository.PackageRevision) (*cachedPackageRevision, error) {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 
 	// TODO: Technically we only need this package, not all packages
-	if _, _, err := r.getCachedPackages(context.TODO(), false); err != nil {
+	if _, _, err := r.getCachedPackages(ctx, false); err != nil {
 		klog.Warningf("failed to get cached packages: %v", err)
 		// TODO: Invalidate all watches? We're dropping an add/update event
 		return nil, err
@@ -214,7 +223,9 @@ func (r *cachedRepository) update(updated repository.PackageRevision) (*cachedPa
 	k := updated.Key()
 	// previous := r.cachedPackageRevisions[k]
 
-	cached := &cachedPackageRevision{PackageRevision: updated}
+	cached := &cachedPackageRevision{
+		PackageRevision: updated,
+	}
 	r.cachedPackageRevisions[k] = cached
 
 	// Recompute latest package revisions.
@@ -282,8 +293,11 @@ func (r *cachedRepository) Close() error {
 
 // pollForever will continue polling until signal channel is closed or ctx is done.
 func (r *cachedRepository) pollForever(ctx context.Context) {
-	ticker := time.NewTicker(1 * time.Minute)
+	// Poll immediately so we don't have to wait for the ticker to trigger the first
+	// sync of the repo.
+	r.pollOnce(ctx)
 
+	ticker := time.NewTicker(1 * time.Minute)
 	for {
 		select {
 		case <-ticker.C:
@@ -325,6 +339,7 @@ func (r *cachedRepository) flush() {
 // it also triggers notifications for all package changes.
 // mutex must be held.
 func (r *cachedRepository) refreshAllCachedPackages(ctx context.Context) (map[repository.PackageKey]*cachedPackage, map[repository.PackageRevisionKey]*cachedPackageRevision, error) {
+	// We probably want to do something here.
 	// TODO: Avoid simultaneous fetches?
 	// TODO: Push-down partial refresh?
 
@@ -340,8 +355,24 @@ func (r *cachedRepository) refreshAllCachedPackages(ctx context.Context) (map[re
 		if newPackageRevisionMap[k] != nil {
 			klog.Warningf("found duplicate packages with key %v", k)
 		}
+
+		// We shouldn't need to look up these every time. We can pick them from the
+		// previous list and only fetch if they don't exist there.
+		internalPkgRev, err := r.metadataStore.Get(ctx, newPackage.KubeObjectName(), newPackage.KubeObjectNamespace())
+		if err != nil && !apierrors.IsNotFound(err) {
+			return nil, nil, err
+		}
+		if apierrors.IsNotFound(err) {
+			klog.Infof("registring new package %s %s", newPackage.KubeObjectName(), newPackage.KubeObjectNamespace())
+			if internalPkgRev, err = r.metadataStore.Create(ctx, newPackage.KubeObjectName(), newPackage.KubeObjectNamespace(),
+				map[string]string{}, map[string]string{}, r.repoSpec); err != nil {
+				return nil, nil, err
+			}
+		}
+
 		newPackageRevisionMap[k] = &cachedPackageRevision{
 			PackageRevision:  newPackage,
+			internalPkgRev:   internalPkgRev,
 			isLatestRevision: false,
 		}
 	}
@@ -364,6 +395,9 @@ func (r *cachedRepository) refreshAllCachedPackages(ctx context.Context) (map[re
 	r.cachedPackageRevisions = newPackageRevisionMap
 	r.cachedPackages = newPackageMap
 
+	// This stuff seems like it is at the wrong place. I would expect
+	// all these mutating operations to go through the Engine. However,
+	// that is not the case now.
 	for k, newPackage := range r.cachedPackageRevisions {
 		oldPackage := oldPackageRevisions[k]
 		if oldPackage == nil {
@@ -377,9 +411,22 @@ func (r *cachedRepository) refreshAllCachedPackages(ctx context.Context) (map[re
 
 	for k, oldPackage := range oldPackageRevisions {
 		if newPackageRevisionMap[k] == nil {
+			klog.Infof("removing old package %s %s", oldPackage.KubeObjectName(), oldPackage.KubeObjectNamespace())
+			if _, err := r.metadataStore.Delete(ctx, oldPackage.KubeObjectName(), oldPackage.KubeObjectNamespace()); err != nil {
+				return nil, nil, err
+			}
 			r.objectCache.notifyPackageRevisionChange(watch.Deleted, oldPackage)
 		}
 	}
 
 	return newPackageMap, newPackageRevisionMap, nil
+}
+
+// TODO: Fix this.
+func UpdateCachedPkgRev(repoPkgRev repository.PackageRevision, internalPkgRev *internalapi.InternalPackageRevision) {
+	cachedPkgRev, ok := repoPkgRev.(*cachedPackageRevision)
+	if !ok {
+		return
+	}
+	cachedPkgRev.internalPkgRev = internalPkgRev
 }

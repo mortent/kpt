@@ -19,7 +19,6 @@ import (
 	"fmt"
 
 	api "github.com/GoogleContainerTools/kpt/porch/api/porch/v1alpha1"
-	internalapi "github.com/GoogleContainerTools/kpt/porch/internal/api/porchinternal/v1alpha1"
 	"github.com/GoogleContainerTools/kpt/porch/pkg/repository"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
@@ -76,9 +75,8 @@ func (r *packageRevisions) List(ctx context.Context, options *metainternalversio
 		return nil, err
 	}
 
-	if err := r.packageCommon.listPackageRevisions(ctx, filter, options.LabelSelector, func(p repository.PackageRevision, i *internalapi.InternalPackageRevision) error {
+	if err := r.packageCommon.listPackageRevisions(ctx, filter, options.LabelSelector, func(p repository.PackageRevision) error {
 		item := p.GetPackageRevision()
-		r.amendApiPkgRevWithMetadata(item, i)
 		result.Items = append(result.Items, *item)
 		return nil
 	}); err != nil {
@@ -93,20 +91,12 @@ func (r *packageRevisions) Get(ctx context.Context, name string, options *metav1
 	ctx, span := tracer.Start(ctx, "packageRevisions::Get", trace.WithAttributes())
 	defer span.End()
 
-	ns, namespaced := genericapirequest.NamespaceFrom(ctx)
-	if !namespaced {
-		return nil, apierrors.NewBadRequest("namespace must be specified")
-	}
-
 	repoPkgRev, err := r.getRepoPkgRev(ctx, name)
 	if err != nil {
 		return nil, err
 	}
 
-	apiPkgRev, err := r.getApiPkgRev(ctx, repoPkgRev, ns)
-	if err != nil {
-		return nil, err
-	}
+	apiPkgRev := repoPkgRev.GetPackageRevision()
 
 	return apiPkgRev, nil
 }
@@ -154,11 +144,6 @@ func (r *packageRevisions) Create(ctx context.Context, runtimeObject runtime.Obj
 	}
 
 	createdApiPkgRev := createdRepoPkgRev.GetPackageRevision()
-	internalPkgRev, err := r.createInternalPkgRev(ctx, createdApiPkgRev, newApiPkgRev)
-	if err != nil {
-		return nil, apierrors.NewInternalError(err)
-	}
-	r.amendApiPkgRevWithMetadata(createdApiPkgRev, internalPkgRev)
 
 	return createdApiPkgRev, nil
 }
@@ -200,12 +185,7 @@ func (r *packageRevisions) Delete(ctx context.Context, name string, deleteValida
 		return nil, false, err
 	}
 
-	internalPkgRev, err := r.getInternalPkgRev(ctx, repoPkgRev.KubeObjectName(), ns)
-	if err != nil {
-		return nil, false, err
-	}
-
-	apiPkgRev := r.toApiPackageRevision(repoPkgRev, internalPkgRev)
+	apiPkgRev := repoPkgRev.GetPackageRevision()
 
 	repositoryObj, err := r.packageCommon.validateDelete(ctx, deleteValidation, apiPkgRev, name, ns)
 	if err != nil {
@@ -214,9 +194,6 @@ func (r *packageRevisions) Delete(ctx context.Context, name string, deleteValida
 
 	if err := r.cad.DeletePackageRevision(ctx, repositoryObj, repoPkgRev); err != nil {
 		return nil, false, apierrors.NewInternalError(err)
-	}
-	if err := r.coreClient.Delete(ctx, internalPkgRev); err != nil {
-		return nil, false, err
 	}
 
 	// TODO: Should we do an async delete?

@@ -22,7 +22,6 @@ import (
 
 	api "github.com/GoogleContainerTools/kpt/porch/api/porch/v1alpha1"
 	"github.com/GoogleContainerTools/kpt/porch/api/porchconfig/v1alpha1"
-	internalapi "github.com/GoogleContainerTools/kpt/porch/internal/api/porchinternal/v1alpha1"
 	"github.com/GoogleContainerTools/kpt/porch/pkg/repository"
 	"go.opentelemetry.io/otel/trace"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -77,12 +76,11 @@ func (r *packageRevisionResources) List(ctx context.Context, options *metaintern
 		return nil, err
 	}
 
-	if err := r.packageCommon.listPackageRevisions(ctx, filter, options.LabelSelector, func(p repository.PackageRevision, i *internalapi.InternalPackageRevision) error {
+	if err := r.packageCommon.listPackageRevisions(ctx, filter, options.LabelSelector, func(p repository.PackageRevision) error {
 		apiPkgResources, err := p.GetResources(ctx)
 		if err != nil {
 			return err
 		}
-		r.amendApiPkgResourcesWithMetadata(apiPkgResources, i)
 		result.Items = append(result.Items, *apiPkgResources)
 		return nil
 	}); err != nil {
@@ -102,16 +100,10 @@ func (r *packageRevisionResources) Get(ctx context.Context, name string, options
 		return nil, err
 	}
 
-	internalPkgRev, err := r.getInternalPkgRev(ctx, pkg.KubeObjectName(), pkg.KubeObjectNamespace())
-	if err != nil {
-		return nil, err
-	}
-
 	apiPkgResources, err := pkg.GetResources(ctx)
 	if err != nil {
 		return nil, err
 	}
-	r.amendApiPkgResourcesWithMetadata(apiPkgResources, internalPkgRev)
 	return apiPkgResources, nil
 }
 
@@ -132,17 +124,11 @@ func (r *packageRevisionResources) Update(ctx context.Context, name string, objI
 		return nil, false, err
 	}
 
-	oldInternalPkgRev, err := r.getInternalPkgRev(ctx, oldRepoPkgRev.KubeObjectName(), oldRepoPkgRev.KubeObjectNamespace())
-	if err != nil {
-		return nil, false, err
-	}
-
 	oldApiPkgRevResources, err := oldRepoPkgRev.GetResources(ctx)
 	if err != nil {
 		klog.Infof("update failed to retrieve old object: %v", err)
 		return nil, false, err
 	}
-	r.amendApiPkgResourcesWithMetadata(oldApiPkgRevResources, oldInternalPkgRev)
 
 	newRuntimeObj, err := objInfo.UpdatedObject(ctx, oldApiPkgRevResources)
 	if err != nil {
@@ -185,12 +171,6 @@ func (r *packageRevisionResources) Update(ctx context.Context, name string, objI
 	if err != nil {
 		return nil, false, apierrors.NewInternalError(err)
 	}
-
-	newInternalPkgRev, err := r.updateInternalPkgRevFromPkgResources(ctx, oldInternalPkgRev, created)
-	if err != nil {
-		return nil, false, apierrors.NewInternalError(err)
-	}
-	r.amendApiPkgResourcesWithMetadata(created, newInternalPkgRev)
 
 	return created, false, nil
 }

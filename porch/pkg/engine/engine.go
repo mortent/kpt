@@ -27,9 +27,11 @@ import (
 	configapi "github.com/GoogleContainerTools/kpt/porch/api/porchconfig/v1alpha1"
 	"github.com/GoogleContainerTools/kpt/porch/pkg/cache"
 	"github.com/GoogleContainerTools/kpt/porch/pkg/kpt"
+	"github.com/GoogleContainerTools/kpt/porch/pkg/meta"
 	"github.com/GoogleContainerTools/kpt/porch/pkg/repository"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/kustomize/kyaml/comments"
 	"sigs.k8s.io/kustomize/kyaml/kio"
@@ -72,6 +74,7 @@ type cadEngine struct {
 	credentialResolver repository.CredentialResolver
 	referenceResolver  ReferenceResolver
 	userInfoProvider   repository.UserInfoProvider
+	metadataStore      meta.MetadataStore
 }
 
 var _ CaDEngine = &cadEngine{}
@@ -128,7 +131,7 @@ func (cad *cadEngine) CreatePackageRevision(ctx context.Context, repositoryObj *
 	}
 
 	// Updates are done.
-	return draft.Close(ctx)
+	return cad.closeDraft(ctx, repositoryObj, draft, obj.Labels, obj.Annotations)
 }
 
 func (cad *cadEngine) applyTasks(ctx context.Context, draft repository.PackageDraft, repositoryObj *configapi.Repository, obj *api.PackageRevision) error {
@@ -345,7 +348,7 @@ func (cad *cadEngine) UpdatePackageRevision(ctx context.Context, repositoryObj *
 	}
 
 	// Updates are done.
-	return draft.Close(ctx)
+	return cad.closeDraft(ctx, repositoryObj, draft, newObj.Labels, newObj.Annotations)
 }
 
 // conditionalAddRender adds a render mutation to the end of the mutations slice if the last
@@ -377,6 +380,10 @@ func (cad *cadEngine) DeletePackageRevision(ctx context.Context, repositoryObj *
 	}
 
 	if err := repo.DeletePackageRevision(ctx, oldPackage); err != nil {
+		return err
+	}
+
+	if _, err := cad.metadataStore.Delete(ctx, oldPackage.KubeObjectName(), oldPackage.KubeObjectNamespace()); err != nil {
 		return err
 	}
 
@@ -475,7 +482,7 @@ func (cad *cadEngine) UpdatePackageResources(ctx context.Context, repositoryObj 
 	}
 
 	// No lifecycle change when updating package resources; updates are done.
-	return draft.Close(ctx)
+	return cad.closeDraft(ctx, repositoryObj, draft, new.Labels, new.Annotations)
 }
 
 func applyResourceMutations(ctx context.Context, draft repository.PackageDraft, baseResources repository.PackageResources, mutations []mutation) error {
@@ -512,6 +519,27 @@ func (cad *cadEngine) ListFunctions(ctx context.Context, repositoryObj *configap
 	}
 
 	return fns, nil
+}
+
+func (cad *cadEngine) closeDraft(ctx context.Context, repository *configapi.Repository, draft repository.PackageDraft, labels, annos map[string]string) (repository.PackageRevision, error) {
+	pkgRev, err := draft.Close(ctx)
+	if err != nil {
+		return nil, err
+	}
+	internalPkgRev, err := cad.metadataStore.Update(ctx, pkgRev.KubeObjectName(), pkgRev.KubeObjectNamespace(), labels, annos)
+	if err != nil && !apierrors.IsNotFound(err) {
+		return nil, err
+	}
+	if apierrors.IsNotFound(err) {
+		internalPkgRev, err = cad.metadataStore.Create(ctx, pkgRev.KubeObjectName(), pkgRev.KubeObjectNamespace(), labels, annos, repository)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	cache.UpdateCachedPkgRev(pkgRev, internalPkgRev)
+
+	return pkgRev, nil
 }
 
 type updatePackageMutation struct {
@@ -807,5 +835,5 @@ func (cad *cadEngine) recloneAndReplay(ctx context.Context, repo repository.Repo
 		return nil, err
 	}
 
-	return draft.Close(ctx)
+	return cad.closeDraft(ctx, repositoryObj, draft, newObj.Labels, newObj.Annotations)
 }

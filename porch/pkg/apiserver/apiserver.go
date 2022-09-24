@@ -25,6 +25,7 @@ import (
 	"github.com/GoogleContainerTools/kpt/porch/pkg/cache"
 	"github.com/GoogleContainerTools/kpt/porch/pkg/engine"
 	"github.com/GoogleContainerTools/kpt/porch/pkg/kpt"
+	"github.com/GoogleContainerTools/kpt/porch/pkg/meta"
 	"github.com/GoogleContainerTools/kpt/porch/pkg/registry/porch"
 	"google.golang.org/api/option"
 	"google.golang.org/api/sts/v1"
@@ -203,6 +204,8 @@ func (c completedConfig) New() (*PorchServer, error) {
 		porch.NewGcloudWIResolver(coreV1Client, stsClient),
 	}
 
+	metadataStore := meta.NewCrdMetadataStore(coreClient)
+
 	credentialResolver := porch.NewCredentialResolver(coreClient, resolverChain)
 	referenceResolver := porch.NewReferenceResolver(coreClient)
 	userInfoProvider := &porch.ApiserverUserInfoProvider{}
@@ -217,6 +220,7 @@ func (c completedConfig) New() (*PorchServer, error) {
 	cache := cache.NewCache(c.ExtraConfig.CacheDirectory, cache.CacheOptions{
 		CredentialResolver: credentialResolver,
 		UserInfoProvider:   userInfoProvider,
+		MetadataStore:      metadataStore,
 	})
 	cad, err := engine.NewCaDEngine(
 		engine.WithCache(cache),
@@ -229,6 +233,7 @@ func (c completedConfig) New() (*PorchServer, error) {
 		engine.WithRenderer(renderer),
 		engine.WithReferenceResolver(referenceResolver),
 		engine.WithUserInfoProvider(userInfoProvider),
+		engine.WithMetadataStore(metadataStore),
 	)
 	if err != nil {
 		return nil, err

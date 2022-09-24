@@ -21,7 +21,6 @@ import (
 	unversionedapi "github.com/GoogleContainerTools/kpt/porch/api/porch"
 	api "github.com/GoogleContainerTools/kpt/porch/api/porch/v1alpha1"
 	configapi "github.com/GoogleContainerTools/kpt/porch/api/porchconfig/v1alpha1"
-	internalapi "github.com/GoogleContainerTools/kpt/porch/internal/api/porchinternal/v1alpha1"
 	"github.com/GoogleContainerTools/kpt/porch/pkg/cache"
 	"github.com/GoogleContainerTools/kpt/porch/pkg/engine"
 	"github.com/GoogleContainerTools/kpt/porch/pkg/repository"
@@ -49,7 +48,7 @@ type packageCommon struct {
 	createStrategy SimpleRESTCreateStrategy
 }
 
-func (r *packageCommon) listPackageRevisions(ctx context.Context, filter packageRevisionFilter, selector labels.Selector, callback func(p repository.PackageRevision, i *internalapi.InternalPackageRevision) error) error {
+func (r *packageCommon) listPackageRevisions(ctx context.Context, filter packageRevisionFilter, selector labels.Selector, callback func(p repository.PackageRevision) error) error {
 	var opts []client.ListOption
 	if ns, namespaced := genericapirequest.NamespaceFrom(ctx); namespaced {
 		opts = append(opts, client.InNamespace(ns))
@@ -82,17 +81,14 @@ func (r *packageCommon) listPackageRevisions(ctx context.Context, filter package
 			return err
 		}
 		for _, rev := range revisions {
-			internalPkgRev, err := r.getInternalPkgRev(ctx, rev.KubeObjectName(), rev.KubeObjectNamespace())
-			if err != nil {
-				return err
-			}
+			apiPkgRev := rev.GetPackageRevision()
 			// We just match against the internal InternalPackageRevision CR here since
 			// it contains the labels for PackageRevision and PackageRevisionResources.
-			if selector != nil && !selector.Matches(labels.Set(internalPkgRev.Labels)) {
+			if selector != nil && !selector.Matches(labels.Set(apiPkgRev.Labels)) {
 				continue
 			}
 
-			if err := callback(rev, internalPkgRev); err != nil {
+			if err := callback(rev); err != nil {
 				return err
 			}
 		}
@@ -242,13 +238,8 @@ func (r *packageCommon) updatePackageRevision(ctx context.Context, name string, 
 	}
 
 	var oldApiPkgRev runtime.Object // We have to be runtime.Object (and not *api.PackageRevision) or else nil-checks fail (because a nil object is not a nil interface)
-	var oldInternalPkgRev *internalapi.InternalPackageRevision
 	if !isCreate {
-		oldInternalPkgRev, err = r.getInternalPkgRev(ctx, oldRepoPkgRev.KubeObjectName(), ns)
-		if err != nil {
-			return nil, false, err
-		}
-		oldApiPkgRev = r.toApiPackageRevision(oldRepoPkgRev, oldInternalPkgRev)
+		oldApiPkgRev = oldRepoPkgRev.GetPackageRevision()
 	}
 
 	newRuntimeObj, err := objInfo.UpdatedObject(ctx, oldApiPkgRev)
@@ -305,12 +296,6 @@ func (r *packageCommon) updatePackageRevision(ctx context.Context, name string, 
 		}
 		updated := rev.GetPackageRevision()
 
-		newInternalPkgRev, err := r.updateInternalPkgRevFromPkgRev(ctx, oldInternalPkgRev, newApiPkgRev)
-		if err != nil {
-			return nil, false, err
-		}
-		r.amendApiPkgRevWithMetadata(updated, newInternalPkgRev)
-
 		return updated, false, nil
 	} else {
 		rev, err := r.cad.CreatePackageRevision(ctx, &repositoryObj, newApiPkgRev)
@@ -319,12 +304,6 @@ func (r *packageCommon) updatePackageRevision(ctx context.Context, name string, 
 			return nil, false, apierrors.NewInternalError(err)
 		}
 		createdApiPkgRev := rev.GetPackageRevision()
-
-		internalPkgRev, err := r.createInternalPkgRev(ctx, createdApiPkgRev, newApiPkgRev)
-		if err != nil {
-			return nil, false, err
-		}
-		r.amendApiPkgRevWithMetadata(createdApiPkgRev, internalPkgRev)
 
 		return createdApiPkgRev, true, nil
 	}
@@ -483,66 +462,66 @@ func (r *packageCommon) validateUpdate(ctx context.Context, newRuntimeObj runtim
 	return nil
 }
 
-func (r *packageCommon) toApiPackageRevision(repoPackageRevision repository.PackageRevision, internalPkgRev *internalapi.InternalPackageRevision) *api.PackageRevision {
-	apiPkgRev := repoPackageRevision.GetPackageRevision()
-	r.amendApiPkgRevWithMetadata(apiPkgRev, internalPkgRev)
-	return apiPkgRev
-}
+// func (r *packageCommon) toApiPackageRevision(repoPackageRevision repository.PackageRevision, internalPkgRev *internalapi.InternalPackageRevision) *api.PackageRevision {
+// 	apiPkgRev := repoPackageRevision.GetPackageRevision()
+// 	r.amendApiPkgRevWithMetadata(apiPkgRev, internalPkgRev)
+// 	return apiPkgRev
+// }
 
-func (r *packageCommon) amendApiPkgRevWithMetadata(apiPkgRev *api.PackageRevision, internalPkgRev *internalapi.InternalPackageRevision) {
-	apiPkgRev.Labels = internalPkgRev.Labels
-	apiPkgRev.Annotations = internalPkgRev.Annotations
-}
+// func (r *packageCommon) amendApiPkgRevWithMetadata(apiPkgRev *api.PackageRevision, internalPkgRev *internalapi.InternalPackageRevision) {
+// 	apiPkgRev.Labels = internalPkgRev.Labels
+// 	apiPkgRev.Annotations = internalPkgRev.Annotations
+// }
 
-func (r *packageCommon) getApiPkgRev(ctx context.Context, repoPkgRev repository.PackageRevision, ns string) (*api.PackageRevision, error) {
-	internalPkgRev, err := r.getInternalPkgRev(ctx, repoPkgRev.KubeObjectName(), ns)
-	if err != nil {
-		return nil, err
-	}
-	return r.toApiPackageRevision(repoPkgRev, internalPkgRev), nil
-}
+// func (r *packageCommon) getApiPkgRev(ctx context.Context, repoPkgRev repository.PackageRevision, ns string) (*api.PackageRevision, error) {
+// 	internalPkgRev, err := r.getInternalPkgRev(ctx, repoPkgRev.KubeObjectName(), ns)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	return r.toApiPackageRevision(repoPkgRev, internalPkgRev), nil
+// }
 
-func (r *packageCommon) getInternalPkgRev(ctx context.Context, name, ns string) (*internalapi.InternalPackageRevision, error) {
-	var prs internalapi.InternalPackageRevision
-	err := r.coreClient.Get(ctx, types.NamespacedName{Name: name, Namespace: ns}, &prs)
-	if err != nil {
-		return nil, err
-	}
-	return &prs, nil
-}
+// func (r *packageCommon) getInternalPkgRev(ctx context.Context, name, ns string) (*internalapi.InternalPackageRevision, error) {
+// 	var prs internalapi.InternalPackageRevision
+// 	err := r.coreClient.Get(ctx, types.NamespacedName{Name: name, Namespace: ns}, &prs)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	return &prs, nil
+// }
 
-func (r *packageCommon) createInternalPkgRev(ctx context.Context, createdApiPkgRev, newApiPkgRev *api.PackageRevision) (*internalapi.InternalPackageRevision, error) {
-	internalPkgRev := internalapi.InternalPackageRevision{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:        createdApiPkgRev.Name,
-			Namespace:   createdApiPkgRev.Namespace,
-			Labels:      newApiPkgRev.Labels,
-			Annotations: newApiPkgRev.Annotations,
-		},
-	}
-	if err := r.coreClient.Create(ctx, &internalPkgRev); err != nil {
-		return nil, err
-	}
-	return &internalPkgRev, nil
-}
+// func (r *packageCommon) createInternalPkgRev(ctx context.Context, createdApiPkgRev, newApiPkgRev *api.PackageRevision) (*internalapi.InternalPackageRevision, error) {
+// 	internalPkgRev := internalapi.InternalPackageRevision{
+// 		ObjectMeta: metav1.ObjectMeta{
+// 			Name:        createdApiPkgRev.Name,
+// 			Namespace:   createdApiPkgRev.Namespace,
+// 			Labels:      newApiPkgRev.Labels,
+// 			Annotations: newApiPkgRev.Annotations,
+// 		},
+// 	}
+// 	if err := r.coreClient.Create(ctx, &internalPkgRev); err != nil {
+// 		return nil, err
+// 	}
+// 	return &internalPkgRev, nil
+// }
 
-func (r *packageCommon) updateInternalPkgRevFromPkgRev(ctx context.Context, internalPkgRev *internalapi.InternalPackageRevision, updatedApiPkgRev *api.PackageRevision) (*internalapi.InternalPackageRevision, error) {
-	newInternalPkgRev := internalPkgRev.DeepCopy()
-	newInternalPkgRev.Labels = updatedApiPkgRev.Labels
-	newInternalPkgRev.Annotations = updatedApiPkgRev.Annotations
-	err := r.coreClient.Update(ctx, newInternalPkgRev)
-	return newInternalPkgRev, err
-}
+// func (r *packageCommon) updateInternalPkgRevFromPkgRev(ctx context.Context, internalPkgRev *internalapi.InternalPackageRevision, updatedApiPkgRev *api.PackageRevision) (*internalapi.InternalPackageRevision, error) {
+// 	newInternalPkgRev := internalPkgRev.DeepCopy()
+// 	newInternalPkgRev.Labels = updatedApiPkgRev.Labels
+// 	newInternalPkgRev.Annotations = updatedApiPkgRev.Annotations
+// 	err := r.coreClient.Update(ctx, newInternalPkgRev)
+// 	return newInternalPkgRev, err
+// }
 
-func (r *packageCommon) updateInternalPkgRevFromPkgResources(ctx context.Context, internalPkgRev *internalapi.InternalPackageRevision, updatedApiPkgResources *api.PackageRevisionResources) (*internalapi.InternalPackageRevision, error) {
-	newInternalPkgRev := internalPkgRev.DeepCopy()
-	newInternalPkgRev.Labels = updatedApiPkgResources.Labels
-	newInternalPkgRev.Annotations = updatedApiPkgResources.Annotations
-	err := r.coreClient.Update(ctx, newInternalPkgRev)
-	return newInternalPkgRev, err
-}
+// func (r *packageCommon) updateInternalPkgRevFromPkgResources(ctx context.Context, internalPkgRev *internalapi.InternalPackageRevision, updatedApiPkgResources *api.PackageRevisionResources) (*internalapi.InternalPackageRevision, error) {
+// 	newInternalPkgRev := internalPkgRev.DeepCopy()
+// 	newInternalPkgRev.Labels = updatedApiPkgResources.Labels
+// 	newInternalPkgRev.Annotations = updatedApiPkgResources.Annotations
+// 	err := r.coreClient.Update(ctx, newInternalPkgRev)
+// 	return newInternalPkgRev, err
+// }
 
-func (r packageCommon) amendApiPkgResourcesWithMetadata(apiPkgResources *api.PackageRevisionResources, internalPkgRev *internalapi.InternalPackageRevision) {
-	apiPkgResources.Labels = internalPkgRev.Labels
-	apiPkgResources.Annotations = internalPkgRev.Annotations
-}
+// func (r packageCommon) amendApiPkgResourcesWithMetadata(apiPkgResources *api.PackageRevisionResources, internalPkgRev *internalapi.InternalPackageRevision) {
+// 	apiPkgResources.Labels = internalPkgRev.Labels
+// 	apiPkgResources.Annotations = internalPkgRev.Annotations
+// }

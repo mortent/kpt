@@ -15,7 +15,10 @@
 package cache
 
 import (
+	"context"
+
 	"github.com/GoogleContainerTools/kpt/porch/api/porch/v1alpha1"
+	internalapi "github.com/GoogleContainerTools/kpt/porch/internal/api/porchinternal/v1alpha1"
 	"github.com/GoogleContainerTools/kpt/porch/pkg/repository"
 )
 
@@ -29,11 +32,14 @@ var _ repository.PackageRevision = &cachedPackageRevision{}
 
 type cachedPackageRevision struct {
 	repository.PackageRevision
+	internalPkgRev   *internalapi.InternalPackageRevision
 	isLatestRevision bool
 }
 
 func (c *cachedPackageRevision) GetPackageRevision() *v1alpha1.PackageRevision {
 	rev := c.PackageRevision.GetPackageRevision()
+	rev.Labels = c.internalPkgRev.Labels
+	rev.Annotations = c.internalPkgRev.Annotations
 	if c.isLatestRevision {
 		if rev.Labels == nil {
 			rev.Labels = map[string]string{}
@@ -41,4 +47,14 @@ func (c *cachedPackageRevision) GetPackageRevision() *v1alpha1.PackageRevision {
 		rev.Labels[v1alpha1.LatestPackageRevisionKey] = v1alpha1.LatestPackageRevisionValue
 	}
 	return rev
+}
+
+func (c *cachedPackageRevision) GetResources(ctx context.Context) (*v1alpha1.PackageRevisionResources, error) {
+	pkgRes, err := c.PackageRevision.GetResources(ctx)
+	if err != nil {
+		return nil, err
+	}
+	pkgRes.Labels = c.internalPkgRev.Labels
+	pkgRes.Annotations = c.internalPkgRev.Annotations
+	return pkgRes, nil
 }
