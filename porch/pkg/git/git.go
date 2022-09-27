@@ -39,6 +39,8 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 	"k8s.io/klog/v2"
+
+	_ "golang.org/x/tools/cmd/stringer"
 )
 
 var tracer = otel.Tracer("git")

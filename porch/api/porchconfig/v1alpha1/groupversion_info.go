@@ -33,13 +33,22 @@ var (
 
 	KindRepository = KindInfo{
 		Resource: GroupVersion.WithResource("repositories"),
-		objects:  []runtime.Object{&Repository{}, &RepositoryList{}},
+		objects: []runtime.Object{
+			&Repository{}, &RepositoryList{},
+			&PackageRev{}, &PackageRevList{},
+		},
 	}
 
 	RepositoryGVK = schema.GroupVersionKind{
 		Group:   GroupVersion.Group,
 		Version: GroupVersion.Version,
 		Kind:    "Repository",
+	}
+
+	PackageRevGVK = schema.GroupVersionKind{
+		Group:   GroupVersion.Group,
+		Version: GroupVersion.Version,
+		Kind:    "PackageRev",
 	}
 
 	AllKinds = []KindInfo{KindRepository}
