@@ -188,6 +188,8 @@ function main() {
   # Repository CRD
   cp "./api/porchconfig/v1alpha1/config.porch.kpt.dev_repositories.yaml" \
      "${DESTINATION}/0-repositories.yaml"
+  cp "./internal/api/porchinternal/v1alpha1/internal.porch.kpt.dev_internalpackagerevisions.yaml" \
+     "${DESTINATION}/0-internalpackagerevisions.yaml"
 
   # Porch Deployment Config
   cp ${PORCH_DIR}/deployments/porch/*.yaml "${PORCH_DIR}/deployments/porch/Kptfile" "${DESTINATION}"

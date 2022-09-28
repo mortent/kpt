@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	api "github.com/GoogleContainerTools/kpt/porch/api/porch/v1alpha1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 )
@@ -41,19 +42,20 @@ func (s packageRevisionStrategy) ValidateUpdate(ctx context.Context, obj, old ru
 	switch lifecycle := oldRevision.Spec.Lifecycle; lifecycle {
 	case "", api.PackageRevisionLifecycleDraft, api.PackageRevisionLifecycleProposed:
 		// valid
-
-	default:
-		allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "lifecycle"), lifecycle, fmt.Sprintf("can only update package with lifecycle value one of %s",
-			strings.Join([]string{
-				string(api.PackageRevisionLifecycleDraft),
-				string(api.PackageRevisionLifecycleProposed),
-			}, ",")),
-		))
-
+	case api.PackageRevisionLifecyclePublished:
+		// We don't allow any updates to the spec for packagerevision that have been published.
+		if !equality.Semantic.DeepEqual(oldRevision.Spec, newRevision.Spec) {
+			allErrs = append(allErrs, field.Invalid(field.NewPath("spec"), newRevision.Spec, fmt.Sprintf("spec can only update package with lifecycle value one of %s",
+				strings.Join([]string{
+					string(api.PackageRevisionLifecycleDraft),
+					string(api.PackageRevisionLifecycleProposed),
+				}, ",")),
+			))
+		}
 	}
 
 	switch lifecycle := newRevision.Spec.Lifecycle; lifecycle {
-	case "", api.PackageRevisionLifecycleDraft, api.PackageRevisionLifecycleProposed:
+	case "", api.PackageRevisionLifecycleDraft, api.PackageRevisionLifecycleProposed, api.PackageRevisionLifecyclePublished:
 		// valid
 
 	default:
@@ -61,6 +63,7 @@ func (s packageRevisionStrategy) ValidateUpdate(ctx context.Context, obj, old ru
 			strings.Join([]string{
 				string(api.PackageRevisionLifecycleDraft),
 				string(api.PackageRevisionLifecycleProposed),
+				string(api.PackageRevisionLifecyclePublished),
 			}, ",")),
 		))
 	}
