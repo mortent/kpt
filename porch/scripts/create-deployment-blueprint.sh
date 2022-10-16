@@ -199,8 +199,10 @@ function main() {
   IFS=',' read -ra RECONCILERS <<< "$ENABLED_RECONCILERS"
   for i in "${RECONCILERS[@]}"; do
     # Copy over the CRD
-    cp "${PORCH_DIR}/controllers/config/crd/bases/config.porch.kpt.dev_${i}.yaml" \
-    "${DESTINATION}/0-${i}.yaml"
+    FILE="${PORCH_DIR}/controllers/config/crd/bases/config.porch.kpt.dev_${i}.yaml"
+    if [ -f "$FILE" ]; then
+      cp "${FILE}" "${DESTINATION}/0-${i}.yaml"
+    fi
     # Update the porch-controllers Deployment env variables to enable the reconciler.
     customize-container-env \
       "ENABLE_${i^^}" \

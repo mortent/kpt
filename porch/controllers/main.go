@@ -39,6 +39,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	"github.com/GoogleContainerTools/kpt/porch/controllers/packagerevisionproposer/pkg/controllers/packagerevisionproposer"
 	"github.com/GoogleContainerTools/kpt/porch/controllers/remoterootsyncsets/pkg/controllers/remoterootsyncset"
 	"github.com/GoogleContainerTools/kpt/porch/controllers/rootsyncsets/pkg/controllers/rootsyncset"
 	"github.com/GoogleContainerTools/kpt/porch/controllers/workloadidentitybindings/pkg/controllers/workloadidentitybinding"
@@ -56,6 +57,9 @@ var (
 		},
 		"workloadidentitybindings": func() Reconciler {
 			return &workloadidentitybinding.WorkloadIdentityBindingReconciler{}
+		},
+		"packagerevisionproposer": func() Reconciler {
+			return &packagerevisionproposer.PackageRevisionProposerReconciler{}
 		},
 	}
 )
