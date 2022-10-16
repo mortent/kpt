@@ -346,9 +346,10 @@ func (r *cachedRepository) refreshAllCachedPackages(ctx context.Context) (map[re
 		return nil, nil, err
 	}
 	// Create a map so we can quickly check if a specific PackageRevisionMeta exists.
-	existingPkgRevCRsMap := make(map[string]bool)
-	for _, pr := range existingPkgRevCRs {
-		existingPkgRevCRsMap[pr.Name] = true
+	existingPkgRevCRsMap := make(map[string]meta.PackageRevisionMeta)
+	for i := range existingPkgRevCRs {
+		pr := existingPkgRevCRs[i]
+		existingPkgRevCRsMap[pr.Name] = pr
 	}
 
 	// TODO: Can we avoid holding the lock for the ListPackageRevisions / identifyLatestRevisions section?
@@ -405,6 +406,7 @@ func (r *cachedRepository) refreshAllCachedPackages(ctx context.Context) (map[re
 						prm.Name, prm.Namespace, err)
 				}
 			}
+
 		}
 	}
 
@@ -416,13 +418,17 @@ func (r *cachedRepository) refreshAllCachedPackages(ctx context.Context) (map[re
 				Name:      pkgRevName,
 				Namespace: r.repoSpec.Namespace,
 			}
-			if _, err := r.metadataStore.Create(ctx, pkgRevMeta, r.repoSpec); err != nil {
+			pkgRevMeta, err := r.metadataStore.Create(ctx, pkgRevMeta, r.repoSpec)
+			if err != nil {
 				// TODO: We should try to find a way to make these errors available through
 				// either the repository CR or the PackageRevision CR. This will be
 				// retried on the next sync.
 				klog.Warningf("unable to create PackageRev CR for %s/%s: %w",
 					r.repoSpec.Namespace, pkgRevName, err)
+				continue
 			}
+			// Update the map with the newly created PackageRevisionMeta
+			existingPkgRevCRsMap[pkgRevName] = pkgRevMeta
 		}
 	}
 

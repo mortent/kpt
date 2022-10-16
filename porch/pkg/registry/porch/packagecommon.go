@@ -30,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/watch"
 	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
 	"k8s.io/apiserver/pkg/registry/rest"
 	"k8s.io/klog/v2"
@@ -129,8 +130,34 @@ func (r *packageCommon) listPackages(ctx context.Context, filter packageFilter, 
 	return nil
 }
 
-func (r *packageCommon) watchPackages(ctx context.Context, filter packageRevisionFilter, callback cache.ObjectWatcher) error {
-	if err := r.cad.ObjectCache().WatchPackageRevisions(ctx, filter.ListPackageRevisionFilter, callback); err != nil {
+type ObjectWatcher interface {
+	OnPackageRevisionChange(err error, eventType watch.EventType, obj *engine.PackageRevision) bool
+}
+
+func (r *packageCommon) watchPackages(ctx context.Context, filter packageRevisionFilter, callback ObjectWatcher) error {
+	if err := r.cad.ObjectCache().WatchPackageRevisions(ctx, filter.ListPackageRevisionFilter, cache.ObjectWatcherFunc(
+		func(eventType watch.EventType, obj repository.PackageRevision) bool {
+			repoObj, err := r.getRepositoryObj(ctx, types.NamespacedName{
+				Name:      obj.Key().Repository,
+				Namespace: obj.KubeObjectNamespace(),
+			})
+			if err != nil {
+				klog.Warning("error looking up repository for watch notification: %v", err)
+				return callback.OnPackageRevisionChange(err, watch.Error, nil)
+			}
+			pkgRevs, err := r.cad.ListPackageRevisions(ctx, repoObj, repository.ListPackageRevisionFilter{KubeObjectName: obj.KubeObjectName()})
+			if err != nil {
+				klog.Warning("error looking up repository for watch notification: %v", err)
+				return callback.OnPackageRevisionChange(err, watch.Error, nil)
+			}
+			for _, pkgRev := range pkgRevs {
+				if pkgRev.KubeObjectName() == obj.KubeObjectName() {
+					return callback.OnPackageRevisionChange(nil, eventType, pkgRev)
+				}
+			}
+			return callback.OnPackageRevisionChange(fmt.Errorf("packageRevision %s not found", obj.KubeObjectName()), watch.Error, nil)
+		},
+	)); err != nil {
 		return err
 	}
 

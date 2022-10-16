@@ -58,6 +58,8 @@ type PackageRevision interface {
 	// Key returns the "primary key" of the package.
 	Key() PackageRevisionKey
 
+	Digest() string
+
 	// Lifecycle returns the current lifecycle state of the package.
 	Lifecycle() v1alpha1.PackageRevisionLifecycle
 

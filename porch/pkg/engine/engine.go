@@ -103,6 +103,7 @@ func (p *PackageRevision) GetPackageRevision(ctx context.Context) (*api.PackageR
 		repoPkgRev.Labels[api.LatestPackageRevisionKey] = api.LatestPackageRevisionValue
 	}
 	repoPkgRev.Annotations = p.packageRevisionMeta.Annotations
+	repoPkgRev.ObjectMeta.ResourceVersion = p.packageRevisionMeta.ResourceVersion
 	return repoPkgRev, nil
 }
 
@@ -299,10 +300,11 @@ func (cad *cadEngine) CreatePackageRevision(ctx context.Context, repositoryObj *
 		return nil, err
 	}
 	pkgRevMeta := meta.PackageRevisionMeta{
-		Name:        repoPkgRev.KubeObjectName(),
-		Namespace:   repoPkgRev.KubeObjectNamespace(),
-		Labels:      obj.Labels,
-		Annotations: obj.Annotations,
+		Name:             repoPkgRev.KubeObjectName(),
+		Namespace:        repoPkgRev.KubeObjectNamespace(),
+		Labels:           obj.Labels,
+		Annotations:      obj.Annotations,
+		RepositoryDigest: repoPkgRev.Digest(),
 	}
 	pkgRevMeta, err = cad.metadataStore.Create(ctx, pkgRevMeta, repositoryObj)
 	if err != nil {
@@ -510,10 +512,11 @@ func (cad *cadEngine) UpdatePackageRevision(ctx context.Context, repositoryObj *
 		repoPkgRev := oldPackage.repoPackageRevision
 
 		pkgRevMeta := meta.PackageRevisionMeta{
-			Name:        repoPkgRev.KubeObjectName(),
-			Namespace:   repoPkgRev.KubeObjectNamespace(),
-			Labels:      newObj.Labels,
-			Annotations: newObj.Annotations,
+			Name:             repoPkgRev.KubeObjectName(),
+			Namespace:        repoPkgRev.KubeObjectNamespace(),
+			Labels:           newObj.Labels,
+			Annotations:      newObj.Annotations,
+			RepositoryDigest: repoPkgRev.Digest(),
 		}
 		cad.metadataStore.Update(ctx, pkgRevMeta)
 
@@ -538,8 +541,22 @@ func (cad *cadEngine) UpdatePackageRevision(ctx context.Context, repositoryObj *
 		if err != nil {
 			return nil, err
 		}
+
+		pkgRevMeta := meta.PackageRevisionMeta{
+			Name:             repoPkgRev.KubeObjectName(),
+			Namespace:        repoPkgRev.KubeObjectNamespace(),
+			Labels:           newObj.Labels,
+			Annotations:      newObj.Annotations,
+			RepositoryDigest: repoPkgRev.Digest(),
+		}
+		pkgRevMeta, err = cad.metadataStore.Update(ctx, pkgRevMeta)
+		if err != nil {
+			return nil, err
+		}
+
 		return &PackageRevision{
 			repoPackageRevision: repoPkgRev,
+			packageRevisionMeta: pkgRevMeta,
 		}, nil
 	}
 
@@ -635,12 +652,16 @@ func (cad *cadEngine) UpdatePackageRevision(ctx context.Context, repositoryObj *
 	}
 
 	pkgRevMeta := meta.PackageRevisionMeta{
-		Name:        repoPkgRev.KubeObjectName(),
-		Namespace:   repoPkgRev.KubeObjectNamespace(),
-		Labels:      newObj.Labels,
-		Annotations: newObj.Annotations,
+		Name:             repoPkgRev.KubeObjectName(),
+		Namespace:        repoPkgRev.KubeObjectNamespace(),
+		Labels:           newObj.Labels,
+		Annotations:      newObj.Annotations,
+		RepositoryDigest: repoPkgRev.Digest(),
 	}
-	cad.metadataStore.Update(ctx, pkgRevMeta)
+	pkgRevMeta, err = cad.metadataStore.Update(ctx, pkgRevMeta)
+	if err != nil {
+		return nil, err
+	}
 
 	return &PackageRevision{
 		repoPackageRevision: repoPkgRev,
@@ -904,8 +925,21 @@ func (cad *cadEngine) UpdatePackageResources(ctx context.Context, repositoryObj 
 	if err != nil {
 		return nil, err
 	}
+
+	// We deliberately don't update labels and annotations here.
+	pkgRevMeta := meta.PackageRevisionMeta{
+		Name:             repoPkgRev.KubeObjectName(),
+		Namespace:        repoPkgRev.KubeObjectNamespace(),
+		RepositoryDigest: repoPkgRev.Digest(),
+	}
+	pkgRevMeta, err = cad.metadataStore.Update(ctx, pkgRevMeta)
+	if err != nil {
+		return nil, err
+	}
+
 	return &PackageRevision{
 		repoPackageRevision: repoPkgRev,
+		packageRevisionMeta: pkgRevMeta,
 	}, nil
 }
 

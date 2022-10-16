@@ -377,6 +377,10 @@ func (p *ociPackageRevision) KubeObjectNamespace() string {
 	return p.parent.namespace
 }
 
+func (p *ociPackageRevision) Digest() string {
+	return p.resourceVersion
+}
+
 func (p *ociPackageRevision) Key() repository.PackageRevisionKey {
 	return repository.PackageRevisionKey{
 		Repository: p.parent.name,

@@ -47,10 +47,12 @@ type MetadataStore interface {
 // PackageRevisionMeta contains metadata about a specific PackageRevision. The
 // PackageRevision is identified by the name and namespace.
 type PackageRevisionMeta struct {
-	Name        string
-	Namespace   string
-	Labels      map[string]string
-	Annotations map[string]string
+	Name             string
+	Namespace        string
+	Labels           map[string]string
+	Annotations      map[string]string
+	RepositoryDigest string
+	ResourceVersion  string
 }
 
 var _ MetadataStore = &crdMetadataStore{}
@@ -81,10 +83,12 @@ func (c *crdMetadataStore) Get(ctx context.Context, namespacedName types.Namespa
 	delete(labels, PkgRevisionRepoLabel)
 
 	return PackageRevisionMeta{
-		Name:        internalPkgRev.Name,
-		Namespace:   internalPkgRev.Namespace,
-		Labels:      labels,
-		Annotations: internalPkgRev.Annotations,
+		Name:             internalPkgRev.Name,
+		Namespace:        internalPkgRev.Namespace,
+		Labels:           labels,
+		Annotations:      internalPkgRev.Annotations,
+		RepositoryDigest: internalPkgRev.Spec.RepositoryDigest,
+		ResourceVersion:  internalPkgRev.ObjectMeta.ResourceVersion,
 	}, nil
 }
 
@@ -103,10 +107,12 @@ func (c *crdMetadataStore) List(ctx context.Context, repo *configapi.Repository)
 		labels := ipr.Labels
 		delete(labels, PkgRevisionRepoLabel)
 		pkgRevMetas = append(pkgRevMetas, PackageRevisionMeta{
-			Name:        ipr.Name,
-			Namespace:   ipr.Namespace,
-			Labels:      labels,
-			Annotations: ipr.Annotations,
+			Name:             ipr.Name,
+			Namespace:        ipr.Namespace,
+			Labels:           labels,
+			Annotations:      ipr.Annotations,
+			RepositoryDigest: ipr.Spec.RepositoryDigest,
+			ResourceVersion:  ipr.ObjectMeta.ResourceVersion,
 		})
 		names = append(names, ipr.Name)
 	}
@@ -141,6 +147,9 @@ func (c *crdMetadataStore) Create(ctx context.Context, pkgRevMeta PackageRevisio
 				},
 			},
 		},
+		Spec: internalapi.PackageRevSpec{
+			RepositoryDigest: pkgRevMeta.RepositoryDigest,
+		},
 	}
 	if err := c.coreClient.Create(ctx, &internalPkgRev); err != nil {
 		if apierrors.IsAlreadyExists(err) {
@@ -149,10 +158,12 @@ func (c *crdMetadataStore) Create(ctx context.Context, pkgRevMeta PackageRevisio
 		return PackageRevisionMeta{}, err
 	}
 	return PackageRevisionMeta{
-		Name:        internalPkgRev.Name,
-		Namespace:   internalPkgRev.Namespace,
-		Labels:      internalPkgRev.Labels,
-		Annotations: internalPkgRev.Annotations,
+		Name:             internalPkgRev.Name,
+		Namespace:        internalPkgRev.Namespace,
+		Labels:           internalPkgRev.Labels,
+		Annotations:      internalPkgRev.Annotations,
+		RepositoryDigest: internalPkgRev.ResourceVersion,
+		ResourceVersion:  internalPkgRev.ObjectMeta.ResourceVersion,
 	}, nil
 }
 
@@ -187,15 +198,19 @@ func (c *crdMetadataStore) Update(ctx context.Context, pkgRevMeta PackageRevisio
 	}
 	internalPkgRev.Annotations = annotations
 
+	internalPkgRev.Spec.RepositoryDigest = pkgRevMeta.RepositoryDigest
+
 	if err := c.coreClient.Update(ctx, &internalPkgRev); err != nil {
 		return PackageRevisionMeta{}, err
 	}
 	delete(labels, PkgRevisionRepoLabel)
 	return PackageRevisionMeta{
-		Name:        pkgRevMeta.Name,
-		Namespace:   pkgRevMeta.Namespace,
-		Labels:      labels,
-		Annotations: internalPkgRev.Annotations,
+		Name:             pkgRevMeta.Name,
+		Namespace:        pkgRevMeta.Namespace,
+		Labels:           labels,
+		Annotations:      internalPkgRev.Annotations,
+		RepositoryDigest: internalPkgRev.Spec.RepositoryDigest,
+		ResourceVersion:  internalPkgRev.ObjectMeta.ResourceVersion,
 	}, nil
 }
 
@@ -221,9 +236,11 @@ func (c *crdMetadataStore) Delete(ctx context.Context, namespacedName types.Name
 	labels := internalPkgRev.Labels
 	delete(labels, PkgRevisionRepoLabel)
 	return PackageRevisionMeta{
-		Name:        internalPkgRev.Name,
-		Namespace:   internalPkgRev.Namespace,
-		Labels:      labels,
-		Annotations: internalPkgRev.Annotations,
+		Name:             internalPkgRev.Name,
+		Namespace:        internalPkgRev.Namespace,
+		Labels:           labels,
+		Annotations:      internalPkgRev.Annotations,
+		RepositoryDigest: internalPkgRev.Spec.RepositoryDigest,
+		ResourceVersion:  internalPkgRev.ObjectMeta.ResourceVersion,
 	}, nil
 }

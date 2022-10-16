@@ -33,6 +33,12 @@ type ObjectWatcher interface {
 	OnPackageRevisionChange(eventType watch.EventType, obj repository.PackageRevision) bool
 }
 
+type ObjectWatcherFunc func(eventType watch.EventType, obj repository.PackageRevision) bool
+
+func (o ObjectWatcherFunc) OnPackageRevisionChange(eventType watch.EventType, obj repository.PackageRevision) bool {
+	return o(eventType, obj)
+}
+
 // objectCache implements ObjectCache
 type objectCache struct {
 	mutex sync.Mutex

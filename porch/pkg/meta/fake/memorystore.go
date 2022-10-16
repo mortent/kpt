@@ -70,7 +70,7 @@ func (m *MemoryMetadataStore) Update(ctx context.Context, pkgRevMeta meta.Packag
 	}
 	if i < 0 {
 		return meta.PackageRevisionMeta{}, apierrors.NewNotFound(
-			schema.GroupResource{Group: "config.porch.kpt.dev", Resource: "packagerevisions"},
+			schema.GroupResource{Group: "porch.kpt.dev", Resource: "packagerevisions"},
 			pkgRevMeta.Name,
 		)
 	}

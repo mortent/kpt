@@ -33,6 +33,7 @@ type PackageRev struct {
 
 // PackageRevSpec defines the desired state of PackageRev
 type PackageRevSpec struct {
+	RepositoryDigest string `json:"repositoryDigest"`
 }
 
 // PackageRevStatus defines the observed state of PackageRev

@@ -41,6 +41,10 @@ func (pr *PackageRevision) KubeObjectNamespace() string {
 	return pr.Namespace
 }
 
+func (pr *PackageRevision) Digest() string {
+	return ""
+}
+
 func (pr *PackageRevision) Key() repository.PackageRevisionKey {
 	return pr.PackageRevisionKey
 }
