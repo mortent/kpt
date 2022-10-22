@@ -69,7 +69,7 @@ type watcher struct {
 	resultChan chan watch.Event
 
 	mutex         sync.Mutex
-	eventCallback func(eventType watch.EventType, pr *engine.PackageRevision) bool
+	eventCallback func(err error, eventType watch.EventType, pr *engine.PackageRevision) bool
 }
 
 var _ watch.Interface = &watcher{}
@@ -93,7 +93,7 @@ func (w *watcher) ResultChan() <-chan watch.Event {
 func (w *watcher) listAndWatch(ctx context.Context, r *packageRevisions, filter packageRevisionFilter, selector labels.Selector) {
 	if err := w.listAndWatchInner(ctx, r, filter, selector); err != nil {
 		// TODO: We need to populate the object on this error
-		klog.Warningf("sending error to watch stream")
+		klog.Warningf("sending error to watch stream: %v", err)
 		ev := watch.Event{
 			Type: watch.Error,
 		}
@@ -108,7 +108,12 @@ func (w *watcher) listAndWatchInner(ctx context.Context, r *packageRevisions, fi
 	done := false
 
 	var backlog []watch.Event
-	w.eventCallback = func(eventType watch.EventType, pr *engine.PackageRevision) bool {
+	w.eventCallback = func(err error, eventType watch.EventType, pr *engine.PackageRevision) bool {
+		if err != nil {
+			done = true
+			errorResult <- err
+			return false
+		}
 		if done {
 			return false
 		}
@@ -180,7 +185,12 @@ func (w *watcher) listAndWatchInner(ctx context.Context, r *packageRevisions, fi
 	}
 
 	klog.Infof("moving watch into streaming mode")
-	w.eventCallback = func(eventType watch.EventType, pr *engine.PackageRevision) bool {
+	w.eventCallback = func(err error, eventType watch.EventType, pr *engine.PackageRevision) bool {
+		if err != nil {
+			done = true
+			errorResult <- err
+			return false
+		}
 		if done {
 			return false
 		}
@@ -219,9 +229,9 @@ func (w *watcher) sendWatchEvent(ev watch.Event) {
 }
 
 // OnPackageRevisionChange is the callback called when a PackageRevision changes.
-func (w *watcher) OnPackageRevisionChange(eventType watch.EventType, pr *engine.PackageRevision) bool {
+func (w *watcher) OnPackageRevisionChange(err error, eventType watch.EventType, pr *engine.PackageRevision) bool {
 	w.mutex.Lock()
 	defer w.mutex.Unlock()
 
-	return w.eventCallback(eventType, pr)
+	return w.eventCallback(err, eventType, pr)
 }
