@@ -71,6 +71,7 @@ loop:
 			watcher, err = w.client.Resource(rootSyncGVR).Watch(w.ctx, v1.ListOptions{})
 			if err != nil {
 				klog.Errorf("Cannot start watch for %s: %v; will retry", clusterRefName, err)
+				// fetch a new client here.
 				reconnect.backoff()
 			} else {
 				klog.Infof("Watch successfully started for %s.", clusterRefName)
