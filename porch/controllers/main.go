@@ -37,10 +37,12 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/GoogleContainerTools/kpt/porch/controllers/downstreampackages/pkg/controllers/downstreampackage"
 	"github.com/GoogleContainerTools/kpt/porch/controllers/functiondiscovery"
+	"github.com/GoogleContainerTools/kpt/porch/controllers/gkehub/pkg/runnables/gkehub"
 	"github.com/GoogleContainerTools/kpt/porch/controllers/klippy/pkg/controllers/klippy"
 	"github.com/GoogleContainerTools/kpt/porch/controllers/remoterootsyncsets/pkg/controllers/remoterootsyncset"
 	"github.com/GoogleContainerTools/kpt/porch/controllers/rootsyncdeployments/pkg/controllers/rootsyncdeployment"
@@ -62,6 +64,10 @@ var (
 		"functiondiscovery":        &functiondiscovery.FunctionReconciler{},
 		"rootsyncrollouts":         rootsyncrollout.NewRootSyncRolloutReconciler(),
 	}
+
+	runners = map[string]Runnable{
+		"gkeHub": gkehub.NewGKEHubRunner(),
+	}
 )
 
 // Reconciler is the interface implemented by (our) reconcilers, which includes some configuration and initialization.
@@ -75,6 +81,12 @@ type Reconciler interface {
 	BindFlags(prefix string, flags *flag.FlagSet)
 
 	// SetupWithManager registers the reconciler to run under the specified manager
+	SetupWithManager(ctrl.Manager) error
+}
+
+type Runnable interface {
+	manager.Runnable
+
 	SetupWithManager(ctrl.Manager) error
 }
 
@@ -150,6 +162,12 @@ func run(ctx context.Context) error {
 		}
 		if err = reconciler.SetupWithManager(mgr); err != nil {
 			return fmt.Errorf("error creating %s reconciler: %w", name, err)
+		}
+	}
+
+	for name, runner := range runners {
+		if err = runner.SetupWithManager(mgr); err != nil {
+			return fmt.Errorf("error creating %s runnable: %w", name, err)
 		}
 	}
 
