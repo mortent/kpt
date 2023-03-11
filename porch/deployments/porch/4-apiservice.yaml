@@ -16,6 +16,8 @@ apiVersion: apiregistration.k8s.io/v1
 kind: APIService
 metadata:
   name: v1alpha1.porch.kpt.dev
+  annotations:
+    config.kubernetes.io/depends-on: /namespaces/porch-system/Service/api
 spec:
   insecureSkipTLSVerify: true
   group: porch.kpt.dev
