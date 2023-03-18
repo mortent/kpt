@@ -41,6 +41,7 @@ import (
 
 	"github.com/GoogleContainerTools/kpt/porch/controllers/functiondiscovery"
 	"github.com/GoogleContainerTools/kpt/porch/controllers/klippy/pkg/controllers/klippy"
+	"github.com/GoogleContainerTools/kpt/porch/controllers/packagerevisions/pkg/controllers/packagerevisions"
 	"github.com/GoogleContainerTools/kpt/porch/controllers/packagevariants/pkg/controllers/packagevariant"
 	"github.com/GoogleContainerTools/kpt/porch/controllers/packagevariantsets/pkg/controllers/packagevariantset"
 	"github.com/GoogleContainerTools/kpt/porch/controllers/remoterootsyncsets/pkg/controllers/remoterootsyncset"
@@ -54,6 +55,7 @@ import (
 
 var (
 	reconcilers = map[string]Reconciler{
+		"packagerevisions":         packagerevisions.NewPackageRevisionReconciler(),
 		"packagevariants":          &packagevariant.PackageVariantReconciler{},
 		"packagevariantsets":       &packagevariantset.PackageVariantSetReconciler{},
 		"rootsyncsets":             &rootsyncset.RootSyncSetReconciler{},

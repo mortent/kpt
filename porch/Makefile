@@ -49,9 +49,9 @@ TEST_GIT_SERVER_IMAGE ?= test-git-server
 # Only enable a subset of reconcilers in porch controllers by default. Use the RECONCILERS
 # env variable to specify a specific list of reconcilers or use
 # RECONCILERS=* to enable all known reconcilers.
-ALL_RECONCILERS="rootsyncsets,remoterootsyncsets,workloadidentitybindings,rootsyncdeployments,functiondiscovery,packagevariants,packagevariantsets,rootsyncrollouts"
+ALL_RECONCILERS="rootsyncsets,remoterootsyncsets,workloadidentitybindings,rootsyncdeployments,functiondiscovery,packagevariants,packagevariantsets,rootsyncrollouts,packagerevisions"
 ifndef RECONCILERS
-  ENABLED_RECONCILERS="rootsyncsets,remoterootsyncsets,workloadidentitybindings,functiondiscovery,packagevariants,packagevariantsets"
+  ENABLED_RECONCILERS="rootsyncsets,remoterootsyncsets,workloadidentitybindings,functiondiscovery,packagevariants,packagevariantsets,packagerevisions"
 else
   ifeq ($(RECONCILERS),*)
     ENABLED_RECONCILERS=${ALL_RECONCILERS}
