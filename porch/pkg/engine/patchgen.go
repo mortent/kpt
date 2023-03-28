@@ -50,7 +50,7 @@ type applyPatchMutation struct {
 	task      *api.Task
 }
 
-var _ mutation = &applyPatchMutation{}
+var _ Mutation = &applyPatchMutation{}
 
 func (m *applyPatchMutation) Apply(ctx context.Context, resources repository.PackageResources) (repository.PackageResources, *api.TaskResult, error) {
 	ctx, span := tracer.Start(ctx, "applyPatchMutation:::Apply", trace.WithAttributes())
@@ -128,7 +128,7 @@ func (m *applyPatchMutation) Apply(ctx context.Context, resources repository.Pac
 	return result, &api.TaskResult{Task: m.task}, nil
 }
 
-func buildPatchMutation(ctx context.Context, task *api.Task) (mutation, error) {
+func BuildPatchMutation(ctx context.Context, task *api.Task) (Mutation, error) {
 	if task.Patch == nil {
 		return nil, fmt.Errorf("patch not set for task of type %q", task.Type)
 	}

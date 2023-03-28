@@ -33,7 +33,7 @@ type grpcRuntime struct {
 	client evaluator.FunctionEvaluatorClient
 }
 
-func newGRPCFunctionRuntime(address string) (*grpcRuntime, error) {
+func NewGRPCFunctionRuntime(address string) (*grpcRuntime, error) {
 	if address == "" {
 		return nil, fmt.Errorf("address is required to instantiate gRPC function runtime")
 	}

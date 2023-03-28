@@ -21,6 +21,7 @@ import (
 	"os"
 
 	"github.com/GoogleContainerTools/kpt/internal/fnruntime"
+	"github.com/GoogleContainerTools/kpt/pkg/fn"
 	"github.com/GoogleContainerTools/kpt/porch/api/porch/v1alpha1"
 	configapi "github.com/GoogleContainerTools/kpt/porch/api/porchconfig/v1alpha1"
 	"github.com/GoogleContainerTools/kpt/porch/pkg/apiserver"
@@ -64,7 +65,10 @@ type PackageRevisionReconciler struct {
 
 	client.Client
 
-	engine engine.CaDEngine
+	engine                engine.CaDEngine
+	referenceResolver     engine.ReferenceResolver
+	runnerOptionsResolver func(namespace string) fnruntime.RunnerOptions
+	runtime               fn.FunctionRuntime
 }
 
 //go:generate go run sigs.k8s.io/controller-tools/cmd/controller-gen@v0.8.0 rbac:roleName=porch-controllers-packagerevisions webhook paths="." output:rbac:artifacts:config=../../../config/rbac
@@ -105,7 +109,6 @@ func (r *PackageRevisionReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		// Stop reconciliation as the item is being deleted
 		return ctrl.Result{}, nil
 	}
-	klog.Infof("foo!")
 
 	var repoObj configapi.Repository
 	nn := types.NamespacedName{
@@ -136,7 +139,119 @@ func (r *PackageRevisionReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, nil
 	}
 
+	repoPkgRev := repoPkgRevs[0]
+	oldPkgRev, err := repoPkgRev.GetPackageRevision(ctx)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	var mutations []engine.Mutation
+	if len(oldPkgRev.Spec.Tasks) > len(pkgRev.Spec.Tasks) {
+		return ctrl.Result{}, fmt.Errorf("removing tasks is not yet supported")
+	}
+	for i := range oldPkgRev.Spec.Tasks {
+		oldTask := &oldPkgRev.Spec.Tasks[i]
+		newTask := &pkgRev.Spec.Tasks[i]
+		if oldTask.Type != newTask.Type {
+			return ctrl.Result{}, fmt.Errorf("changing task types is not yet supported")
+		}
+	}
+	if len(pkgRev.Spec.Tasks) > len(oldPkgRev.Spec.Tasks) {
+		if len(pkgRev.Spec.Tasks) > len(oldPkgRev.Spec.Tasks)+1 {
+			return ctrl.Result{}, fmt.Errorf("can only append one task at a time")
+		}
+
+		newTask := pkgRev.Spec.Tasks[len(pkgRev.Spec.Tasks)-1]
+		if newTask.Type != v1alpha1.TaskTypeUpdate {
+			return ctrl.Result{}, fmt.Errorf("appended task is type %q, must be type %q", newTask.Type, v1alpha1.TaskTypeUpdate)
+		}
+		if newTask.Update == nil {
+			return ctrl.Result{}, fmt.Errorf("update not set for updateTask of type %q", newTask.Type)
+		}
+
+		cloneTask := engine.FindCloneTask(oldPkgRev)
+		if cloneTask == nil {
+			return ctrl.Result{}, fmt.Errorf("upstream source not found for package rev %q; only cloned packages can be updated", oldPkgRev.Spec.PackageName)
+		}
+
+		mutation := &engine.UpdatePackageMutation{
+			CloneTask:         cloneTask,
+			UpdateTask:        &newTask,
+			RepoOpener:        r.engine,
+			ReferenceResolver: r.referenceResolver,
+			Namespace:         repoObj.GetNamespace(),
+			PkgName:           pkgRev.GetName(),
+		}
+		mutations = append(mutations, mutation)
+	}
+
+	// Re-render if we are making changes.
+	mutations = r.conditionalAddRender(&pkgRev, mutations)
+
+	draft, err := repo.UpdatePackageRevision(ctx, repoPkgRev)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// If any of the fields in the API that are projections from the Kptfile
+	// must be updated in the Kptfile as well.
+	kfPatchTask, created, err := engine.CreateKptfilePatchTask(ctx, repoPkgRev, &pkgRev)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if created {
+		kfPatchMutation, err := engine.BuildPatchMutation(ctx, kfPatchTask)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		mutations = append(mutations, kfPatchMutation)
+	}
+
+	// Re-render if we are making changes.
+	mutations = r.conditionalAddRender(&pkgRev, mutations)
+
+	// TODO: Handle the case if alongside lifecycle change, tasks are changed too.
+	// Update package contents only if the package is in draft state
+	if oldPkgRev.Spec.Lifecycle == v1alpha1.PackageRevisionLifecycleDraft {
+		apiResources, err := repoPkgRev.GetResources(ctx)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("cannot get package resources: %w", err)
+		}
+		resources := repository.PackageResources{
+			Contents: apiResources.Spec.Resources,
+		}
+
+		if _, _, err := engine.ApplyResourceMutations(ctx, draft, resources, mutations); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
+	if err := draft.UpdateLifecycle(ctx, pkgRev.Spec.Lifecycle); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// Updates are done.
+	repoPkgRev, err = draft.Close(ctx)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
 	return ctrl.Result{}, nil
+}
+
+// conditionalAddRender adds a render mutation to the end of the mutations slice if the last
+// entry is not already a render mutation.
+func (r *PackageRevisionReconciler) conditionalAddRender(subject client.Object, mutations []engine.Mutation) []engine.Mutation {
+	if len(mutations) == 0 || engine.IsRenderMutation(mutations[len(mutations)-1]) {
+		return mutations
+	}
+
+	runnerOptions := r.runnerOptionsResolver(subject.GetNamespace())
+
+	return append(mutations, &engine.RenderPackageMutation{
+		RunnerOptions: runnerOptions,
+		Runtime:       r.runtime,
+	})
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -200,13 +315,20 @@ func (r *PackageRevisionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return runnerOptions
 	}
 
+	builtinRuntime := engine.NewBuiltinRuntime()
+	grpcRuntime, err := engine.NewGRPCFunctionRuntime(functionRunnerAddress)
+
+	runtime := fn.NewMultiRuntime([]fn.FunctionRuntime{
+		builtinRuntime,
+		grpcRuntime,
+	})
+
 	cad, err := engine.NewCaDEngine(
 		engine.WithCache(cache),
 		// The order of registering the function runtimes matters here. When
 		// evaluating a function, the runtimes will be tried in the same
 		// order as they are registered.
-		engine.WithBuiltinFunctionRuntime(),
-		engine.WithGRPCFunctionRuntime(functionRunnerAddress),
+		engine.WithFunctionRuntime(runtime),
 		engine.WithCredentialResolver(credentialResolver),
 		engine.WithRunnerOptionsResolver(runnerOptionsResolver),
 		engine.WithReferenceResolver(referenceResolver),
@@ -218,6 +340,9 @@ func (r *PackageRevisionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return err
 	}
 	r.engine = cad
+	r.referenceResolver = referenceResolver
+	r.runnerOptionsResolver = runnerOptionsResolver
+	r.runtime = runtime
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.PackageRevision{}).

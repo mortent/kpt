@@ -52,7 +52,7 @@ type builtinRuntime struct {
 	fnMapping map[string]fnsdk.ResourceListProcessor
 }
 
-func newBuiltinRuntime() *builtinRuntime {
+func NewBuiltinRuntime() *builtinRuntime {
 	fnMap := map[string]fnsdk.ResourceListProcessor{}
 	for _, img := range applyReplacementsImageAliases {
 		fnMap[img] = fnsdk.ResourceListProcessorFunc(replacements.ApplyReplacements)

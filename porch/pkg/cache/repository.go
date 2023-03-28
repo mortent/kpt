@@ -379,6 +379,10 @@ func (r *cachedRepository) flush() {
 // it also triggers notifications for all package changes.
 // mutex must be held.
 func (r *cachedRepository) refreshAllCachedPackages(ctx context.Context) (map[repository.PackageKey]*cachedPackage, map[repository.PackageRevisionKey]*cachedPackageRevision, error) {
+	if r.metadataStore == nil {
+		return r.refreshAllCachedPackagesForController(ctx)
+	}
+
 	// TODO: Avoid simultaneous fetches?
 	// TODO: Push-down partial refresh?
 
@@ -505,6 +509,52 @@ func (r *cachedRepository) refreshAllCachedPackages(ctx context.Context) (map[re
 			r.objectNotifier.NotifyPackageRevisionChange(watch.Deleted, oldPackage, metaPackage)
 		}
 	}
+
+	return newPackageMap, newPackageRevisionMap, nil
+}
+
+func (r *cachedRepository) refreshAllCachedPackagesForController(ctx context.Context) (map[repository.PackageKey]*cachedPackage, map[repository.PackageRevisionKey]*cachedPackageRevision, error) {
+	// TODO: Avoid simultaneous fetches?
+	// TODO: Push-down partial refresh?
+
+	// TODO: Can we avoid holding the lock for the ListPackageRevisions / identifyLatestRevisions section?
+	newPackageRevisions, err := r.repo.ListPackageRevisions(ctx, repository.ListPackageRevisionFilter{})
+	if err != nil {
+		return nil, nil, fmt.Errorf("error listing packages: %w", err)
+	}
+
+	newPackageRevisionMap := make(map[repository.PackageRevisionKey]*cachedPackageRevision, len(newPackageRevisions))
+	newPackageRevisionNames := make(map[string]*cachedPackageRevision, len(newPackageRevisions))
+	for _, newPackage := range newPackageRevisions {
+		k := newPackage.Key()
+		if newPackageRevisionMap[k] != nil {
+			klog.Warningf("found duplicate packages with key %v", k)
+		}
+
+		pkgRev := &cachedPackageRevision{
+			PackageRevision:  newPackage,
+			isLatestRevision: false,
+		}
+		newPackageRevisionMap[k] = pkgRev
+		newPackageRevisionNames[newPackage.KubeObjectName()] = pkgRev
+	}
+
+	identifyLatestRevisions(newPackageRevisionMap)
+
+	newPackageMap := make(map[repository.PackageKey]*cachedPackage)
+
+	for _, newPackageRevision := range newPackageRevisionMap {
+		if !newPackageRevision.isLatestRevision {
+			continue
+		}
+		// TODO: Build package?
+		// newPackage := &cachedPackage{
+		// }
+		// newPackageMap[newPackage.Key()] = newPackage
+	}
+
+	r.cachedPackageRevisions = newPackageRevisionMap
+	r.cachedPackages = newPackageMap
 
 	return newPackageMap, newPackageRevisionMap, nil
 }

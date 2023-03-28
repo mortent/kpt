@@ -294,7 +294,7 @@ func TestSomething(t *testing.T) {
 	for tn := range testCases {
 		tc := testCases[tn]
 		t.Run(tn, func(t *testing.T) {
-			task, hasPatch, err := createKptfilePatchTask(context.Background(), tc.repoPkgRev, tc.newApiPkgRev)
+			task, hasPatch, err := CreateKptfilePatchTask(context.Background(), tc.repoPkgRev, tc.newApiPkgRev)
 			if err != nil {
 				t.Fatal(err)
 			}

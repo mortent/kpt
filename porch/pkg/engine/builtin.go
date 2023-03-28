@@ -33,7 +33,7 @@ type builtinEvalMutation struct {
 	runner   fn.FunctionRunner
 }
 
-func newPackageContextGeneratorMutation(packageConfig *builtins.PackageConfig) (mutation, error) {
+func newPackageContextGeneratorMutation(packageConfig *builtins.PackageConfig) (Mutation, error) {
 	runner := &builtins.PackageContextGenerator{
 		PackageConfig: packageConfig,
 	}
@@ -44,7 +44,7 @@ func newPackageContextGeneratorMutation(packageConfig *builtins.PackageConfig) (
 	}, nil
 }
 
-var _ mutation = &builtinEvalMutation{}
+var _ Mutation = &builtinEvalMutation{}
 
 func (m *builtinEvalMutation) Apply(ctx context.Context, resources repository.PackageResources) (repository.PackageResources, *api.TaskResult, error) {
 	ff := &runtimeutil.FunctionFilter{

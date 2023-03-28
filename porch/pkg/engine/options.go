@@ -46,7 +46,7 @@ func WithCache(cache *cache.Cache) EngineOption {
 
 func WithBuiltinFunctionRuntime() EngineOption {
 	return EngineOptionFunc(func(engine *cadEngine) error {
-		runtime := newBuiltinRuntime()
+		runtime := NewBuiltinRuntime()
 		if engine.runtime == nil {
 			engine.runtime = runtime
 		} else if mr, ok := engine.runtime.(*fn.MultiRuntime); ok {
@@ -60,7 +60,7 @@ func WithBuiltinFunctionRuntime() EngineOption {
 
 func WithGRPCFunctionRuntime(address string) EngineOption {
 	return EngineOptionFunc(func(engine *cadEngine) error {
-		runtime, err := newGRPCFunctionRuntime(address)
+		runtime, err := NewGRPCFunctionRuntime(address)
 		if err != nil {
 			return fmt.Errorf("failed to create function runtime: %w", err)
 		}

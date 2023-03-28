@@ -32,14 +32,14 @@ import (
 	"sigs.k8s.io/kustomize/kyaml/filesys"
 )
 
-type renderPackageMutation struct {
-	runtime       fn.FunctionRuntime
-	runnerOptions fnruntime.RunnerOptions
+type RenderPackageMutation struct {
+	Runtime       fn.FunctionRuntime
+	RunnerOptions fnruntime.RunnerOptions
 }
 
-var _ mutation = &renderPackageMutation{}
+var _ Mutation = &RenderPackageMutation{}
 
-func (m *renderPackageMutation) Apply(ctx context.Context, resources repository.PackageResources) (repository.PackageResources, *api.TaskResult, error) {
+func (m *RenderPackageMutation) Apply(ctx context.Context, resources repository.PackageResources) (repository.PackageResources, *api.TaskResult, error) {
 	ctx, span := tracer.Start(ctx, "renderPackageMutation::Apply", trace.WithAttributes())
 	defer span.End()
 
@@ -64,10 +64,10 @@ func (m *renderPackageMutation) Apply(ctx context.Context, resources repository.
 		// TODO: we should handle this better
 		klog.Warningf("skipping render as no package was found")
 	} else {
-		renderer := kpt.NewRenderer(m.runnerOptions)
+		renderer := kpt.NewRenderer(m.RunnerOptions)
 		result, err := renderer.Render(ctx, fs, fn.RenderOptions{
 			PkgPath: pkgPath,
-			Runtime: m.runtime,
+			Runtime: m.Runtime,
 		})
 		if result != nil {
 			var rr api.ResultList

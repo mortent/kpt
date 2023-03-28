@@ -32,7 +32,7 @@ type editPackageMutation struct {
 	referenceResolver ReferenceResolver
 }
 
-var _ mutation = &editPackageMutation{}
+var _ Mutation = &editPackageMutation{}
 
 func (m *editPackageMutation) Apply(ctx context.Context, resources repository.PackageResources) (repository.PackageResources, *api.TaskResult, error) {
 	ctx, span := tracer.Start(ctx, "editPackageMutation::Apply", trace.WithAttributes())

@@ -170,7 +170,7 @@ type cadEngine struct {
 
 var _ CaDEngine = &cadEngine{}
 
-type mutation interface {
+type Mutation interface {
 	Apply(ctx context.Context, resources repository.PackageResources) (repository.PackageResources, *api.TaskResult, error)
 }
 
@@ -221,7 +221,7 @@ func (cad *cadEngine) ListPackageRevisions(ctx context.Context, repositorySpec *
 	return packageRevisions, nil
 }
 
-func buildPackageConfig(ctx context.Context, obj *api.PackageRevision, parent *PackageRevision) (*builtins.PackageConfig, error) {
+func BuildPackageConfig(ctx context.Context, obj *api.PackageRevision, parent *PackageRevision) (*builtins.PackageConfig, error) {
 	config := &builtins.PackageConfig{}
 
 	parentPath := ""
@@ -269,7 +269,7 @@ func (cad *cadEngine) CreatePackageRevision(ctx context.Context, repositoryObj *
 	ctx, span := tracer.Start(ctx, "cadEngine::CreatePackageRevision", trace.WithAttributes())
 	defer span.End()
 
-	packageConfig, err := buildPackageConfig(ctx, obj, parent)
+	packageConfig, err := BuildPackageConfig(ctx, obj, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -500,7 +500,7 @@ func taskTypeOneOf(taskType api.TaskType, oneOf ...api.TaskType) bool {
 }
 
 func (cad *cadEngine) applyTasks(ctx context.Context, draft repository.PackageDraft, repositoryObj *configapi.Repository, obj *api.PackageRevision, packageConfig *builtins.PackageConfig) error {
-	var mutations []mutation
+	var mutations []Mutation
 
 	// Unless first task is Init or Clone, insert Init to create an empty package.
 	tasks := obj.Spec.Tasks
@@ -529,7 +529,7 @@ func (cad *cadEngine) applyTasks(ctx context.Context, draft repository.PackageDr
 	mutations = cad.conditionalAddRender(obj, mutations)
 
 	baseResources := repository.PackageResources{}
-	if _, _, err := applyResourceMutations(ctx, draft, baseResources, mutations); err != nil {
+	if _, _, err := ApplyResourceMutations(ctx, draft, baseResources, mutations); err != nil {
 		return err
 	}
 
@@ -540,7 +540,7 @@ type RepositoryOpener interface {
 	OpenRepository(ctx context.Context, repositorySpec *configapi.Repository) (repository.Repository, error)
 }
 
-func (cad *cadEngine) mapTaskToMutation(ctx context.Context, obj *api.PackageRevision, task *api.Task, isDeployment bool, packageConfig *builtins.PackageConfig) (mutation, error) {
+func (cad *cadEngine) mapTaskToMutation(ctx context.Context, obj *api.PackageRevision, task *api.Task, isDeployment bool, packageConfig *builtins.PackageConfig) (Mutation, error) {
 	switch task.Type {
 	case api.TaskTypeInit:
 		if task.Init == nil {
@@ -569,21 +569,21 @@ func (cad *cadEngine) mapTaskToMutation(ctx context.Context, obj *api.PackageRev
 		if task.Update == nil {
 			return nil, fmt.Errorf("update not set for task of type %q", task.Type)
 		}
-		cloneTask := findCloneTask(obj)
+		cloneTask := FindCloneTask(obj)
 		if cloneTask == nil {
 			return nil, fmt.Errorf("upstream source not found for package rev %q; only cloned packages can be updated", obj.Spec.PackageName)
 		}
-		return &updatePackageMutation{
-			cloneTask:         cloneTask,
-			updateTask:        task,
-			namespace:         obj.Namespace,
-			repoOpener:        cad,
-			referenceResolver: cad.referenceResolver,
-			pkgName:           obj.Spec.PackageName,
+		return &UpdatePackageMutation{
+			CloneTask:         cloneTask,
+			UpdateTask:        task,
+			Namespace:         obj.Namespace,
+			RepoOpener:        cad,
+			ReferenceResolver: cad.referenceResolver,
+			PkgName:           obj.Spec.PackageName,
 		}, nil
 
 	case api.TaskTypePatch:
-		return buildPatchMutation(ctx, task)
+		return BuildPatchMutation(ctx, task)
 
 	case api.TaskTypeEdit:
 		if task.Edit == nil {
@@ -606,9 +606,9 @@ func (cad *cadEngine) mapTaskToMutation(ctx context.Context, obj *api.PackageRev
 		// task for render.
 		if task.Eval.Image == "render" {
 			runnerOptions := cad.runnerOptionsResolver(obj.Namespace)
-			return &renderPackageMutation{
-				runnerOptions: runnerOptions,
-				runtime:       cad.runtime,
+			return &RenderPackageMutation{
+				RunnerOptions: runnerOptions,
+				Runtime:       cad.runtime,
 			}, nil
 		} else {
 			runnerOptions := cad.runnerOptionsResolver(obj.Namespace)
@@ -683,7 +683,7 @@ func (cad *cadEngine) UpdatePackageRevision(ctx context.Context, repositoryObj *
 	}
 
 	if isRecloneAndReplay(oldObj, newObj) {
-		packageConfig, err := buildPackageConfig(ctx, newObj, parent)
+		packageConfig, err := BuildPackageConfig(ctx, newObj, parent)
 		if err != nil {
 			return nil, err
 		}
@@ -701,7 +701,7 @@ func (cad *cadEngine) UpdatePackageRevision(ctx context.Context, repositoryObj *
 		return ToPackageRevision(repoPkgRev, pkgRevMeta), nil
 	}
 
-	var mutations []mutation
+	var mutations []Mutation
 	if len(oldObj.Spec.Tasks) > len(newObj.Spec.Tasks) {
 		return nil, fmt.Errorf("removing tasks is not yet supported")
 	}
@@ -725,18 +725,18 @@ func (cad *cadEngine) UpdatePackageRevision(ctx context.Context, repositoryObj *
 			return nil, fmt.Errorf("update not set for updateTask of type %q", newTask.Type)
 		}
 
-		cloneTask := findCloneTask(oldObj)
+		cloneTask := FindCloneTask(oldObj)
 		if cloneTask == nil {
 			return nil, fmt.Errorf("upstream source not found for package rev %q; only cloned packages can be updated", oldObj.Spec.PackageName)
 		}
 
-		mutation := &updatePackageMutation{
-			cloneTask:         cloneTask,
-			updateTask:        &newTask,
-			repoOpener:        cad,
-			referenceResolver: cad.referenceResolver,
-			namespace:         repositoryObj.Namespace,
-			pkgName:           oldObj.GetName(),
+		mutation := &UpdatePackageMutation{
+			CloneTask:         cloneTask,
+			UpdateTask:        &newTask,
+			RepoOpener:        cad,
+			ReferenceResolver: cad.referenceResolver,
+			Namespace:         repositoryObj.Namespace,
+			PkgName:           oldObj.GetName(),
 		}
 		mutations = append(mutations, mutation)
 	}
@@ -751,12 +751,12 @@ func (cad *cadEngine) UpdatePackageRevision(ctx context.Context, repositoryObj *
 
 	// If any of the fields in the API that are projections from the Kptfile
 	// must be updated in the Kptfile as well.
-	kfPatchTask, created, err := createKptfilePatchTask(ctx, oldPackage.repoPackageRevision, newObj)
+	kfPatchTask, created, err := CreateKptfilePatchTask(ctx, oldPackage.repoPackageRevision, newObj)
 	if err != nil {
 		return nil, err
 	}
 	if created {
-		kfPatchMutation, err := buildPatchMutation(ctx, kfPatchTask)
+		kfPatchMutation, err := BuildPatchMutation(ctx, kfPatchTask)
 		if err != nil {
 			return nil, err
 		}
@@ -777,7 +777,7 @@ func (cad *cadEngine) UpdatePackageRevision(ctx context.Context, repositoryObj *
 			Contents: apiResources.Spec.Resources,
 		}
 
-		if _, _, err := applyResourceMutations(ctx, draft, resources, mutations); err != nil {
+		if _, _, err := ApplyResourceMutations(ctx, draft, resources, mutations); err != nil {
 			return nil, err
 		}
 	}
@@ -813,7 +813,7 @@ func (cad *cadEngine) updatePkgRevMeta(ctx context.Context, repoPkgRev repositor
 	return cad.metadataStore.Update(ctx, pkgRevMeta)
 }
 
-func createKptfilePatchTask(ctx context.Context, oldPackage repository.PackageRevision, newObj *api.PackageRevision) (*api.Task, bool, error) {
+func CreateKptfilePatchTask(ctx context.Context, oldPackage repository.PackageRevision, newObj *api.PackageRevision) (*api.Task, bool, error) {
 	kf, err := oldPackage.GetKptfile(ctx)
 	if err != nil {
 		return nil, false, err
@@ -903,21 +903,21 @@ func convertStatusToKptfile(s api.ConditionStatus) kptfile.ConditionStatus {
 
 // conditionalAddRender adds a render mutation to the end of the mutations slice if the last
 // entry is not already a render mutation.
-func (cad *cadEngine) conditionalAddRender(subject client.Object, mutations []mutation) []mutation {
-	if len(mutations) == 0 || isRenderMutation(mutations[len(mutations)-1]) {
+func (cad *cadEngine) conditionalAddRender(subject client.Object, mutations []Mutation) []Mutation {
+	if len(mutations) == 0 || IsRenderMutation(mutations[len(mutations)-1]) {
 		return mutations
 	}
 
 	runnerOptions := cad.runnerOptionsResolver(subject.GetNamespace())
 
-	return append(mutations, &renderPackageMutation{
-		runnerOptions: runnerOptions,
-		runtime:       cad.runtime,
+	return append(mutations, &RenderPackageMutation{
+		RunnerOptions: runnerOptions,
+		Runtime:       cad.runtime,
 	})
 }
 
-func isRenderMutation(m mutation) bool {
-	_, isRender := m.(*renderPackageMutation)
+func IsRenderMutation(m Mutation) bool {
+	_, isRender := m.(*RenderPackageMutation)
 	return isRender
 }
 
@@ -1073,7 +1073,7 @@ func (cad *cadEngine) UpdatePackageResources(ctx context.Context, repositoryObj 
 
 	runnerOptions := cad.runnerOptionsResolver(old.GetNamespace())
 
-	mutations := []mutation{
+	mutations := []Mutation{
 		&mutationReplaceResources{
 			newResources: new,
 			oldResources: old,
@@ -1086,7 +1086,7 @@ func (cad *cadEngine) UpdatePackageResources(ctx context.Context, repositoryObj 
 	resources := repository.PackageResources{
 		Contents: prevResources.Spec.Resources,
 	}
-	appliedResources, _, err := applyResourceMutations(ctx, draft, resources, mutations)
+	appliedResources, _, err := ApplyResourceMutations(ctx, draft, resources, mutations)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1097,12 +1097,12 @@ func (cad *cadEngine) UpdatePackageResources(ctx context.Context, repositoryObj 
 	// and is returned in packageresourceresources API's status field. We continue with
 	// saving the non-rendered resources to avoid losing user's changes.
 	// and supress this err.
-	_, renderStatus, _ := applyResourceMutations(ctx,
+	_, renderStatus, _ := ApplyResourceMutations(ctx,
 		draft,
 		appliedResources,
-		[]mutation{&renderPackageMutation{
-			runnerOptions: runnerOptions,
-			runtime:       cad.runtime,
+		[]Mutation{&RenderPackageMutation{
+			RunnerOptions: runnerOptions,
+			Runtime:       cad.runtime,
 		}})
 
 	// No lifecycle change when updating package resources; updates are done.
@@ -1115,9 +1115,9 @@ func (cad *cadEngine) UpdatePackageResources(ctx context.Context, repositoryObj 
 	}, renderStatus, nil
 }
 
-// applyResourceMutations mutates the resources and returns the most recent renderResult.
-func applyResourceMutations(ctx context.Context, draft repository.PackageDraft, baseResources repository.PackageResources, mutations []mutation) (applied repository.PackageResources, renderStatus *api.RenderStatus, err error) {
-	var lastApplied mutation
+// ApplyResourceMutations mutates the resources and returns the most recent renderResult.
+func ApplyResourceMutations(ctx context.Context, draft repository.PackageDraft, baseResources repository.PackageResources, mutations []Mutation) (applied repository.PackageResources, renderStatus *api.RenderStatus, err error) {
+	var lastApplied Mutation
 	for _, m := range mutations {
 		updatedResources, taskResult, err := m.Apply(ctx, baseResources)
 		if taskResult == nil && err == nil {
@@ -1137,7 +1137,7 @@ func applyResourceMutations(ctx context.Context, draft repository.PackageDraft, 
 		}
 
 		// if the last applied mutation was a render mutation, and so is this one, skip it
-		if lastApplied != nil && isRenderMutation(m) && isRenderMutation(lastApplied) {
+		if lastApplied != nil && IsRenderMutation(m) && IsRenderMutation(lastApplied) {
 			continue
 		}
 		lastApplied = m
@@ -1180,16 +1180,16 @@ func (cad *cadEngine) ListFunctions(ctx context.Context, repositoryObj *configap
 	return functions, nil
 }
 
-type updatePackageMutation struct {
-	cloneTask         *api.Task
-	updateTask        *api.Task
-	repoOpener        RepositoryOpener
-	referenceResolver ReferenceResolver
-	namespace         string
-	pkgName           string
+type UpdatePackageMutation struct {
+	CloneTask         *api.Task
+	UpdateTask        *api.Task
+	RepoOpener        RepositoryOpener
+	ReferenceResolver ReferenceResolver
+	Namespace         string
+	PkgName           string
 }
 
-func (m *updatePackageMutation) Apply(ctx context.Context, resources repository.PackageResources) (repository.PackageResources, *api.TaskResult, error) {
+func (m *UpdatePackageMutation) Apply(ctx context.Context, resources repository.PackageResources) (repository.PackageResources, *api.TaskResult, error) {
 	ctx, span := tracer.Start(ctx, "updatePackageMutation::Apply", trace.WithAttributes())
 	defer span.End()
 
@@ -1198,24 +1198,24 @@ func (m *updatePackageMutation) Apply(ctx context.Context, resources repository.
 		return repository.PackageResources{}, nil, err
 	}
 
-	targetUpstream := m.updateTask.Update.Upstream
+	targetUpstream := m.UpdateTask.Update.Upstream
 	if targetUpstream.Type == api.RepositoryTypeGit || targetUpstream.Type == api.RepositoryTypeOCI {
 		return repository.PackageResources{}, nil, fmt.Errorf("update is not supported for non-porch upstream packages")
 	}
 
 	originalResources, err := (&PackageFetcher{
-		repoOpener:        m.repoOpener,
-		referenceResolver: m.referenceResolver,
-	}).FetchResources(ctx, currUpstreamPkgRef, m.namespace)
+		repoOpener:        m.RepoOpener,
+		referenceResolver: m.ReferenceResolver,
+	}).FetchResources(ctx, currUpstreamPkgRef, m.Namespace)
 	if err != nil {
 		return repository.PackageResources{}, nil, fmt.Errorf("error fetching the resources for package %s with ref %+v",
-			m.pkgName, *currUpstreamPkgRef)
+			m.PkgName, *currUpstreamPkgRef)
 	}
 
 	upstreamRevision, err := (&PackageFetcher{
-		repoOpener:        m.repoOpener,
-		referenceResolver: m.referenceResolver,
-	}).FetchRevision(ctx, targetUpstream.UpstreamRef, m.namespace)
+		repoOpener:        m.RepoOpener,
+		referenceResolver: m.ReferenceResolver,
+	}).FetchRevision(ctx, targetUpstream.UpstreamRef, m.Namespace)
 	if err != nil {
 		return repository.PackageResources{}, nil, fmt.Errorf("error fetching revision for target upstream %s", targetUpstream.UpstreamRef.Name)
 	}
@@ -1225,7 +1225,7 @@ func (m *updatePackageMutation) Apply(ctx context.Context, resources repository.
 	}
 
 	klog.Infof("performing pkg upgrade operation for pkg %s resource counts local[%d] original[%d] upstream[%d]",
-		m.pkgName, len(resources.Contents), len(originalResources.Spec.Resources), len(upstreamResources.Spec.Resources))
+		m.PkgName, len(resources.Contents), len(originalResources.Spec.Resources), len(upstreamResources.Spec.Resources))
 
 	// May be have packageUpdater part of engine to make it easy for testing ?
 	updatedResources, err := (&defaultPackageUpdater{}).Update(ctx,
@@ -1245,7 +1245,7 @@ func (m *updatePackageMutation) Apply(ctx context.Context, resources repository.
 		return repository.PackageResources{}, nil, fmt.Errorf("error fetching the resources for package revisions %s", targetUpstream.UpstreamRef.Name)
 	}
 	if err := kpt.UpdateKptfileUpstream("", updatedResources.Contents, newUpstream, newUpstreamLock); err != nil {
-		return repository.PackageResources{}, nil, fmt.Errorf("failed to apply upstream lock to package %q: %w", m.pkgName, err)
+		return repository.PackageResources{}, nil, fmt.Errorf("failed to apply upstream lock to package %q: %w", m.PkgName, err)
 	}
 
 	// ensure merge-key comment is added to newly added resources.
@@ -1253,24 +1253,24 @@ func (m *updatePackageMutation) Apply(ctx context.Context, resources repository.
 	if err != nil {
 		klog.Infof("failed to add merge key comments: %v", err)
 	}
-	return result, &api.TaskResult{Task: m.updateTask}, nil
+	return result, &api.TaskResult{Task: m.UpdateTask}, nil
 }
 
 // Currently assumption is that downstream packages will be forked from a porch package.
 // As per current implementation, upstream package ref is stored in a new update task but this may
 // change so the logic of figuring out current upstream will live in this function.
-func (m *updatePackageMutation) currUpstream() (*api.PackageRevisionRef, error) {
-	if m.cloneTask == nil || m.cloneTask.Clone == nil {
-		return nil, fmt.Errorf("package %s does not have original upstream info", m.pkgName)
+func (m *UpdatePackageMutation) currUpstream() (*api.PackageRevisionRef, error) {
+	if m.CloneTask == nil || m.CloneTask.Clone == nil {
+		return nil, fmt.Errorf("package %s does not have original upstream info", m.PkgName)
 	}
-	upstream := m.cloneTask.Clone.Upstream
+	upstream := m.CloneTask.Clone.Upstream
 	if upstream.Type == api.RepositoryTypeGit || upstream.Type == api.RepositoryTypeOCI {
 		return nil, fmt.Errorf("upstream package must be porch native package. Found it to be %s", upstream.Type)
 	}
 	return upstream.UpstreamRef, nil
 }
 
-func findCloneTask(pr *api.PackageRevision) *api.Task {
+func FindCloneTask(pr *api.PackageRevision) *api.Task {
 	if len(pr.Spec.Tasks) == 0 {
 		return nil
 	}
