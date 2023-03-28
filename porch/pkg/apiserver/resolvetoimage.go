@@ -28,17 +28,17 @@ import (
 
 // KubeFunctionResolver resolves function names to full image paths
 type KubeFunctionResolver struct {
-	client             client.WithWatch
-	defaultImagePrefix string
+	Client             client.Client
+	DefaultImagePrefix string
 	// resolver  *FunctionResolver
-	namespace string
+	Namespace string
 }
 
 // resolveToImagePorch converts the function short path to the full image url.
 // If the function is Catalog function, it adds "gcr.io/kpt-fn/".e.g. set-namespace:v0.1 --> gcr.io/kpt-fn/set-namespace:v0.1
 // If the function is porch function, it queries porch to get the function image by name and namespace.
 // e.g. default:set-namespace:v0.1 --> us-west1-docker.pkg.dev/cpa-kit-dev/packages/set-namespace:v0.1
-func (r *KubeFunctionResolver) resolveToImagePorch(ctx context.Context, image string) (string, error) {
+func (r *KubeFunctionResolver) ResolveToImagePorch(ctx context.Context, image string) (string, error) {
 	segments := strings.Split(image, ":")
 	if len(segments) == 4 {
 		// Porch function
@@ -55,12 +55,12 @@ func (r *KubeFunctionResolver) resolveToImagePorch(ctx context.Context, image st
 		// TODO: Use fieldSelectors and better lookup
 		name := "functions:" + image + ":latest"
 		key := types.NamespacedName{
-			Namespace: r.namespace,
+			Namespace: r.Namespace,
 			Name:      name,
 		}
 		// We query the apiserver for these types, even if we could query directly; this will then work with CRDs etc.
 		// TODO: We need to think about priority-and-fairness with loopback queries
-		if err := r.client.Get(ctx, key, &function); err != nil {
+		if err := r.Client.Get(ctx, key, &function); err != nil {
 			if !apierrors.IsNotFound(err) {
 				return "", fmt.Errorf("failed to get image for function %q: %w", image, err)
 			}
@@ -68,7 +68,7 @@ func (r *KubeFunctionResolver) resolveToImagePorch(ctx context.Context, image st
 			return function.Spec.Image, nil
 		}
 		// TODO: Fallback to cluster-scoped?
-		return r.defaultImagePrefix + image, nil
+		return r.DefaultImagePrefix + image, nil
 	}
 	return image, nil
 }

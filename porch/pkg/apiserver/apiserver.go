@@ -231,11 +231,11 @@ func (c completedConfig) New() (*PorchServer, error) {
 		runnerOptions := fnruntime.RunnerOptions{}
 		runnerOptions.InitDefaults()
 		r := &KubeFunctionResolver{
-			client:             coreClient,
-			defaultImagePrefix: c.ExtraConfig.DefaultImagePrefix,
-			namespace:          namespace,
+			Client:             coreClient,
+			DefaultImagePrefix: c.ExtraConfig.DefaultImagePrefix,
+			Namespace:          namespace,
 		}
-		runnerOptions.ResolveToImage = r.resolveToImagePorch
+		runnerOptions.ResolveToImage = r.ResolveToImagePorch
 
 		return runnerOptions
 	}

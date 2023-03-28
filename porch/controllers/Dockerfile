@@ -43,6 +43,8 @@ COPY pkg/ pkg/
 COPY porch/api/ porch/api/
 COPY porch/controllers/ porch/controllers/
 COPY porch/pkg/ porch/pkg/
+COPY porch/func porch/func
+COPY porch/internal porch/internal
 
 WORKDIR /workspace/porch/controllers/
 RUN CGO_ENABLED=0 go build -o /porch-controllers -v .

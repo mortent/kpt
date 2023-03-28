@@ -69,6 +69,8 @@ type CaDEngine interface {
 	CreatePackage(ctx context.Context, repositoryObj *configapi.Repository, obj *api.Package) (*Package, error)
 	UpdatePackage(ctx context.Context, repositoryObj *configapi.Repository, oldPackage *Package, old, new *api.Package) (*Package, error)
 	DeletePackage(ctx context.Context, repositoryObj *configapi.Repository, obj *Package) error
+
+	RepositoryOpener
 }
 
 type Package struct {

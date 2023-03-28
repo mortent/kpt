@@ -125,6 +125,18 @@ start-function-runner:
 	  $(IMAGE_REPO)/$(PORCH_FUNCTION_RUNNER_IMAGE):$(IMAGE_TAG) \
 	  -disable-runtimes pod
 
+.PHONY: start-controllers
+start-controllers:
+	IMAGE_NAME="$(PORCH_CONTROLLERS_IMAGE)" $(MAKE) -C ./controllers build-image
+	docker stop porch-controllers || true
+	docker rm -f porch-controllers || true
+	docker run --detach \
+	  --network=porch \
+	  --ip 192.168.8.203 \
+	  --name porch-controllers \
+	  $(IMAGE_REPO)/$(PORCH_CONTROLLERS_IMAGE):$(IMAGE_TAG) \
+	  --kubeconfig="$(KUBECONFIG)" \
+
 .PHONY: generate
 generate:
 	@for f in $(MODULES); do (cd $$f; echo "Generating $$f"; go generate -v ./...) || exit 1; done

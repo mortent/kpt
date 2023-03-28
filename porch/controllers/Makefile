@@ -29,4 +29,4 @@ build-image:
 
 .PHONY: run-local
 run-local:
-	GCP_PROJECT_ID=${GCP_PROJECT_ID} go run .
+	GCP_PROJECT_ID=${GCP_PROJECT_ID} go run . --reconcilers=packagerevisions
