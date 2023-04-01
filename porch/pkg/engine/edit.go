@@ -23,35 +23,35 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-type editPackageMutation struct {
-	task              *api.Task
-	namespace         string
-	repositoryName    string
-	packageName       string
-	repoOpener        RepositoryOpener
-	referenceResolver ReferenceResolver
+type EditPackageMutation struct {
+	Task              *api.Task
+	Namespace         string
+	RepositoryName    string
+	PackageName       string
+	RepoOpener        RepositoryOpener
+	ReferenceResolver ReferenceResolver
 }
 
-var _ Mutation = &editPackageMutation{}
+var _ Mutation = &EditPackageMutation{}
 
-func (m *editPackageMutation) Apply(ctx context.Context, resources repository.PackageResources) (repository.PackageResources, *api.TaskResult, error) {
+func (m *EditPackageMutation) Apply(ctx context.Context, resources repository.PackageResources) (repository.PackageResources, *api.TaskResult, error) {
 	ctx, span := tracer.Start(ctx, "editPackageMutation::Apply", trace.WithAttributes())
 	defer span.End()
 
-	sourceRef := m.task.Edit.Source
+	sourceRef := m.Task.Edit.Source
 
 	revision, err := (&PackageFetcher{
-		repoOpener:        m.repoOpener,
-		referenceResolver: m.referenceResolver,
-	}).FetchRevision(ctx, sourceRef, m.namespace)
+		repoOpener:        m.RepoOpener,
+		referenceResolver: m.ReferenceResolver,
+	}).FetchRevision(ctx, sourceRef, m.Namespace)
 	if err != nil {
 		return repository.PackageResources{}, nil, fmt.Errorf("failed to fetch package %q: %w", sourceRef.Name, err)
 	}
 
 	// We only allow edit to create new revision from the same package.
-	if revision.Key().Package != m.packageName ||
-		revision.Key().Repository != m.repositoryName {
-		return repository.PackageResources{}, nil, fmt.Errorf("source revision must be from same package %s/%s", m.repositoryName, m.packageName)
+	if revision.Key().Package != m.PackageName ||
+		revision.Key().Repository != m.RepositoryName {
+		return repository.PackageResources{}, nil, fmt.Errorf("source revision must be from same package %s/%s", m.RepositoryName, m.PackageName)
 	}
 
 	// We only allow edit to create new revisions from published packages.
@@ -66,5 +66,5 @@ func (m *editPackageMutation) Apply(ctx context.Context, resources repository.Pa
 
 	return repository.PackageResources{
 		Contents: sourceResources.Spec.Resources,
-	}, &api.TaskResult{Task: m.task}, nil
+	}, &api.TaskResult{Task: m.Task}, nil
 }

@@ -15,6 +15,7 @@
 package v1alpha1
 
 import (
+	"github.com/GoogleContainerTools/kpt/porch/api/porch/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -33,6 +34,26 @@ type PackageRev struct {
 
 // PackageRevSpec defines the desired state of PackageRev
 type PackageRevSpec struct {
+	// PackageName identifies the package in the repository.
+	PackageName string `json:"packageName,omitempty"`
+
+	// RepositoryName is the name of the Repository object containing this package.
+	RepositoryName string `json:"repository,omitempty"`
+
+	// WorkspaceName is a short, unique description of the changes contained in this package revision.
+	WorkspaceName v1alpha1.WorkspaceName `json:"workspaceName,omitempty"`
+
+	// Revision identifies the version of the package.
+	Revision string `json:"revision,omitempty"`
+
+	// Parent references a package that provides resources to us
+	Parent *v1alpha1.ParentReference `json:"parent,omitempty"`
+
+	Lifecycle v1alpha1.PackageRevisionLifecycle `json:"lifecycle,omitempty"`
+
+	Tasks []v1alpha1.Task `json:"tasks,omitempty"`
+
+	ReadinessGates []v1alpha1.ReadinessGate `json:"readinessGates,omitempty"`
 }
 
 // PackageRevStatus defines the observed state of PackageRev

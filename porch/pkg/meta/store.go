@@ -60,6 +60,12 @@ type PackageRevisionMeta struct {
 	Finalizers        []string
 	OwnerReferences   []metav1.OwnerReference
 	DeletionTimestamp *metav1.Time
+
+	Spec internalapi.PackageRevSpec
+
+	UID               types.UID
+	ResourceVersion   string
+	CreationTimestamp metav1.Time
 }
 
 var _ MetadataStore = &crdMetadataStore{}
@@ -115,25 +121,19 @@ func (c *crdMetadataStore) Create(ctx context.Context, pkgRevMeta PackageRevisio
 	}
 	labels[PkgRevisionRepoLabel] = repoName
 
-	ownerReferences := append(pkgRevMeta.OwnerReferences, metav1.OwnerReference{
-		APIVersion: packageRevisionGVK.GroupVersion().String(),
-		Kind:       packageRevisionGVK.Kind,
-		Name:       pkgRevMeta.Name,
-		UID:        pkgRevUID,
-	})
-
 	finalizers := append(pkgRevMeta.Finalizers, PkgRevisionFinalizer)
 
 	internalPkgRev := internalapi.PackageRev{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:            pkgRevMeta.Name,
-			Namespace:       pkgRevMeta.Namespace,
-			Labels:          labels,
-			Annotations:     pkgRevMeta.Annotations,
-			Finalizers:      finalizers,
-			OwnerReferences: ownerReferences,
+			Name:        pkgRevMeta.Name,
+			Namespace:   pkgRevMeta.Namespace,
+			Labels:      labels,
+			Annotations: pkgRevMeta.Annotations,
+			Finalizers:  finalizers,
 		},
+		Spec: pkgRevMeta.Spec,
 	}
+
 	if err := c.coreClient.Create(ctx, &internalPkgRev); err != nil {
 		if apierrors.IsAlreadyExists(err) {
 			return c.Update(ctx, pkgRevMeta)
@@ -237,6 +237,10 @@ func toPackageRevisionMeta(internalPkgRev *internalapi.PackageRev) PackageRevisi
 		Finalizers:        finalizers,
 		OwnerReferences:   ownerReferences,
 		DeletionTimestamp: internalPkgRev.DeletionTimestamp,
+		Spec:              internalPkgRev.Spec,
+		UID:               internalPkgRev.GetUID(),
+		ResourceVersion:   internalPkgRev.GetResourceVersion(),
+		CreationTimestamp: internalPkgRev.CreationTimestamp,
 	}
 }
 

@@ -26,9 +26,9 @@ import (
 )
 
 func TestInit(t *testing.T) {
-	init := &initPackageMutation{
-		name: "testpkg",
-		task: &api.Task{
+	init := &InitPackageMutation{
+		Name: "testpkg",
+		Task: &api.Task{
 			Init: &api.PackageInitTaskSpec{
 				Description: "test package",
 				Keywords:    []string{"test", "kpt", "pkg"},

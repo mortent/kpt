@@ -34,6 +34,316 @@ spec:
             type: object
           spec:
             description: PackageRevSpec defines the desired state of PackageRev
+            properties:
+              lifecycle:
+                type: string
+              packageName:
+                description: PackageName identifies the package in the repository.
+                type: string
+              parent:
+                description: Parent references a package that provides resources to
+                  us
+                properties:
+                  name:
+                    description: Name is the name of the parent PackageRevision
+                    type: string
+                required:
+                - name
+                type: object
+              readinessGates:
+                items:
+                  properties:
+                    conditionType:
+                      type: string
+                  type: object
+                type: array
+              repository:
+                description: RepositoryName is the name of the Repository object containing
+                  this package.
+                type: string
+              revision:
+                description: Revision identifies the version of the package.
+                type: string
+              tasks:
+                items:
+                  properties:
+                    clone:
+                      properties:
+                        strategy:
+                          description: 'Defines which strategy should be used to update
+                            the package. It defaults to ''resource-merge''. * resource-merge:
+                            Perform a structural comparison of the original / updated
+                            resources, and merge the changes into the local package.
+                            * fast-forward: Fail without updating if the local package
+                            was modified since it was fetched. * force-delete-replace:
+                            Wipe all the local changes to the package and replace
+                            it with the remote version.'
+                          type: string
+                        upstreamRef:
+                          description: '`Upstream` is the reference to the upstream
+                            package to clone.'
+                          properties:
+                            git:
+                              description: Git upstream package specification. Required
+                                if `type` is `git`. Must be unspecified if `type`
+                                is not `git`.
+                              properties:
+                                directory:
+                                  description: Directory within the Git repository
+                                    where the packages are stored. A subdirectory
+                                    of this directory containing a Kptfile is considered
+                                    a package.
+                                  type: string
+                                ref:
+                                  description: '`Ref` is the git ref containing the
+                                    package. Ref can be a branch, tag, or commit SHA.'
+                                  type: string
+                                repo:
+                                  description: 'Address of the Git repository, for
+                                    example: `https://github.com/GoogleCloudPlatform/blueprints.git`'
+                                  type: string
+                                secretRef:
+                                  description: Reference to secret containing authentication
+                                    credentials. Optional.
+                                  properties:
+                                    name:
+                                      description: Name of the secret. The secret
+                                        is expected to be located in the same namespace
+                                        as the resource containing the reference.
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                              required:
+                              - directory
+                              - ref
+                              - repo
+                              type: object
+                            oci:
+                              description: OCI upstream package specification. Required
+                                if `type` is `oci`. Must be unspecified if `type`
+                                is not `oci`.
+                              properties:
+                                image:
+                                  description: Image is the address of an OCI image.
+                                  type: string
+                              required:
+                              - image
+                              type: object
+                            type:
+                              description: Type of the repository (i.e. git, OCI).
+                                If empty, `upstreamRef` will be used.
+                              type: string
+                            upstreamRef:
+                              description: UpstreamRef is the reference to the package
+                                from a registered repository rather than external
+                                package.
+                              properties:
+                                name:
+                                  description: '`Name` is the name of the referenced
+                                    PackageRevision resource.'
+                                  type: string
+                              required:
+                              - name
+                              type: object
+                          type: object
+                      type: object
+                    edit:
+                      properties:
+                        sourceRef:
+                          description: PackageRevisionRef is a reference to a package
+                            revision.
+                          properties:
+                            name:
+                              description: '`Name` is the name of the referenced PackageRevision
+                                resource.'
+                              type: string
+                          required:
+                          - name
+                          type: object
+                      type: object
+                    eval:
+                      properties:
+                        config:
+                          description: '`Config` specifies the function config, arbitrary
+                            KRM resource. Mutually exclusive with ConfigMap.'
+                          type: object
+                        configMap:
+                          additionalProperties:
+                            type: string
+                          description: '`ConfigMap` specifies the function config
+                            (https://kpt.dev/reference/cli/fn/eval/). Mutually exclusive
+                            with Config.'
+                          type: object
+                        enableNetwork:
+                          description: '`EnableNetwork` controls whether the function
+                            has access to network. Defaults to `false`.'
+                          type: boolean
+                        functionRef:
+                          description: '`FunctionRef` specifies the function by reference
+                            to a Function resource. Mutually exclusive with `Image`.'
+                          properties:
+                            name:
+                              description: Name is the name of the Function resource
+                                referenced. The resource is expected to be within
+                                the same namespace.
+                              type: string
+                          required:
+                          - name
+                          type: object
+                        image:
+                          description: '`Image` specifies the function image, such
+                            as `gcr.io/kpt-fn/gatekeeper:v0.2`. Use of `Image` is
+                            mutually exclusive with `FunctionRef`.'
+                          type: string
+                        includeMetaResources:
+                          description: If enabled, meta resources (i.e. `Kptfile`
+                            and `functionConfig`) are included in the input to the
+                            function. By default it is disabled.
+                          type: boolean
+                        match:
+                          description: Match specifies the selection criteria for
+                            the function evaluation. Corresponds to `kpt fn eval --match-???`
+                            flgs (https://kpt.dev/reference/cli/fn/eval/).
+                          properties:
+                            apiVersion:
+                              description: APIVersion of the target resources
+                              type: string
+                            kind:
+                              description: Kind of the target resources
+                              type: string
+                            name:
+                              description: Name of the target resources
+                              type: string
+                            namespace:
+                              description: Namespace of the target resources
+                              type: string
+                          type: object
+                        subpackage:
+                          description: '`Subpackage` is a directory path to a subpackage
+                            in which to evaluate the function.'
+                          type: string
+                      type: object
+                    init:
+                      description: PackageInitTaskSpec defines the package initialization
+                        task.
+                      properties:
+                        description:
+                          description: '`Description` is a short description of the
+                            package.'
+                          type: string
+                        keywords:
+                          description: '`Keywords` is a list of keywords describing
+                            the package.'
+                          items:
+                            type: string
+                          type: array
+                        site:
+                          description: '`Site is a link to page with information about
+                            the package.'
+                          type: string
+                        subpackage:
+                          description: '`Subpackage` is a directory path to a subpackage
+                            to initialize. If unspecified, the main package will be
+                            initialized.'
+                          type: string
+                      type: object
+                    patch:
+                      properties:
+                        patches:
+                          description: Patches is a list of individual patch operations.
+                          items:
+                            properties:
+                              contents:
+                                type: string
+                              file:
+                                type: string
+                              patchType:
+                                type: string
+                            type: object
+                          type: array
+                      type: object
+                    type:
+                      type: string
+                    update:
+                      properties:
+                        upstreamRef:
+                          description: '`Upstream` is the reference to the upstream
+                            package.'
+                          properties:
+                            git:
+                              description: Git upstream package specification. Required
+                                if `type` is `git`. Must be unspecified if `type`
+                                is not `git`.
+                              properties:
+                                directory:
+                                  description: Directory within the Git repository
+                                    where the packages are stored. A subdirectory
+                                    of this directory containing a Kptfile is considered
+                                    a package.
+                                  type: string
+                                ref:
+                                  description: '`Ref` is the git ref containing the
+                                    package. Ref can be a branch, tag, or commit SHA.'
+                                  type: string
+                                repo:
+                                  description: 'Address of the Git repository, for
+                                    example: `https://github.com/GoogleCloudPlatform/blueprints.git`'
+                                  type: string
+                                secretRef:
+                                  description: Reference to secret containing authentication
+                                    credentials. Optional.
+                                  properties:
+                                    name:
+                                      description: Name of the secret. The secret
+                                        is expected to be located in the same namespace
+                                        as the resource containing the reference.
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                              required:
+                              - directory
+                              - ref
+                              - repo
+                              type: object
+                            oci:
+                              description: OCI upstream package specification. Required
+                                if `type` is `oci`. Must be unspecified if `type`
+                                is not `oci`.
+                              properties:
+                                image:
+                                  description: Image is the address of an OCI image.
+                                  type: string
+                              required:
+                              - image
+                              type: object
+                            type:
+                              description: Type of the repository (i.e. git, OCI).
+                                If empty, `upstreamRef` will be used.
+                              type: string
+                            upstreamRef:
+                              description: UpstreamRef is the reference to the package
+                                from a registered repository rather than external
+                                package.
+                              properties:
+                                name:
+                                  description: '`Name` is the name of the referenced
+                                    PackageRevision resource.'
+                                  type: string
+                              required:
+                              - name
+                              type: object
+                          type: object
+                      type: object
+                  required:
+                  - type
+                  type: object
+                type: array
+              workspaceName:
+                description: WorkspaceName is a short, unique description of the changes
+                  contained in this package revision.
+                type: string
             type: object
           status:
             description: PackageRevStatus defines the observed state of PackageRev

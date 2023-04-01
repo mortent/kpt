@@ -119,12 +119,14 @@ func (r *runner) runE(cmd *cobra.Command, args []string) error {
 			APIVersion: porchapi.SchemeGroupVersion.Identifier(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
+			Name:      "blueprint-123456789",
 			Namespace: *r.cfg.Namespace,
 		},
 		Spec: porchapi.PackageRevisionSpec{
 			PackageName:    r.name,
 			WorkspaceName:  porchapi.WorkspaceName(r.workspace),
 			RepositoryName: r.repository,
+			Lifecycle:      porchapi.PackageRevisionLifecycleDraft,
 			Tasks: []porchapi.Task{
 				{
 					Type: porchapi.TaskTypeInit,

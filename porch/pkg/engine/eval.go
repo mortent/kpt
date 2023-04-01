@@ -29,23 +29,23 @@ import (
 	"sigs.k8s.io/kustomize/kyaml/yaml"
 )
 
-type evalFunctionMutation struct {
-	runtime       fn.FunctionRuntime
-	runnerOptions fnruntime.RunnerOptions
-	task          *api.Task
+type EvalFunctionMutation struct {
+	Runtime       fn.FunctionRuntime
+	RunnerOptions fnruntime.RunnerOptions
+	Task          *api.Task
 }
 
-func (m *evalFunctionMutation) Apply(ctx context.Context, resources repository.PackageResources) (repository.PackageResources, *api.TaskResult, error) {
+func (m *EvalFunctionMutation) Apply(ctx context.Context, resources repository.PackageResources) (repository.PackageResources, *api.TaskResult, error) {
 	ctx, span := tracer.Start(ctx, "evalFunctionMutation::Apply", trace.WithAttributes())
 	defer span.End()
 
-	e := m.task.Eval
+	e := m.Task.Eval
 
 	function := v1.Function{
 		Image: e.Image,
 	}
-	if function.Image != "" && m.runnerOptions.ResolveToImage != nil {
-		img, err := m.runnerOptions.ResolveToImage(ctx, function.Image)
+	if function.Image != "" && m.RunnerOptions.ResolveToImage != nil {
+		img, err := m.RunnerOptions.ResolveToImage(ctx, function.Image)
 		if err != nil {
 			return repository.PackageResources{}, nil, err
 		}
@@ -54,21 +54,21 @@ func (m *evalFunctionMutation) Apply(ctx context.Context, resources repository.P
 
 	// TODO: Apply should accept filesystem instead of PackageResources
 
-	runner, err := m.runtime.GetRunner(ctx, &function)
+	runner, err := m.Runtime.GetRunner(ctx, &function)
 	if err != nil {
 		return repository.PackageResources{}, nil, fmt.Errorf("failed to create function runner: %w", err)
 	}
 
 	var functionConfig *yaml.RNode
-	if m.task.Eval.ConfigMap != nil {
-		if cm, err := fnruntime.NewConfigMap(m.task.Eval.ConfigMap); err != nil {
+	if m.Task.Eval.ConfigMap != nil {
+		if cm, err := fnruntime.NewConfigMap(m.Task.Eval.ConfigMap); err != nil {
 			return repository.PackageResources{}, nil, fmt.Errorf("failed to create function config: %w", err)
 		} else {
 			functionConfig = cm
 		}
-	} else if len(m.task.Eval.Config.Raw) != 0 {
+	} else if len(m.Task.Eval.Config.Raw) != 0 {
 		// raw is JSON (we expect), but we take advantage of the fact that YAML is a superset of JSON
-		config, err := yaml.Parse(string(m.task.Eval.Config.Raw))
+		config, err := yaml.Parse(string(m.Task.Eval.Config.Raw))
 		if err != nil {
 			return repository.PackageResources{}, nil, fmt.Errorf("error parsing function config: %w", err)
 		}
@@ -114,5 +114,5 @@ func (m *evalFunctionMutation) Apply(ctx context.Context, resources repository.P
 		result.Contents[k] = v
 	}
 
-	return result, &api.TaskResult{Task: m.task}, nil
+	return result, &api.TaskResult{Task: m.Task}, nil
 }

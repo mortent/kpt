@@ -220,8 +220,8 @@ func TestCloneGitBasicAuth(t *testing.T) {
 
 	addr := startGitServer(t, repo)
 
-	cpm := clonePackageMutation{
-		task: &v1alpha1.Task{
+	cpm := ClonePackageMutation{
+		Task: &v1alpha1.Task{
 			Type: "clone",
 			Clone: &v1alpha1.PackageCloneTaskSpec{
 				Upstream: v1alpha1.UpstreamPackage{
@@ -237,9 +237,9 @@ func TestCloneGitBasicAuth(t *testing.T) {
 				},
 			},
 		},
-		namespace: "test-namespace",
-		name:      "test-configmap",
-		credentialResolver: &credentialResolver{
+		Namespace: "test-namespace",
+		Name:      "test-configmap",
+		CredentialResolver: &credentialResolver{
 			username: "",
 			password: "",
 		},
@@ -250,7 +250,7 @@ func TestCloneGitBasicAuth(t *testing.T) {
 		t.Errorf("Expected error (unauthorized); got none")
 	}
 
-	cpm.credentialResolver = auth
+	cpm.CredentialResolver = auth
 
 	r, _, err := cpm.Apply(context.Background(), repository.PackageResources{})
 	if err != nil {

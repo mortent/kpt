@@ -30,6 +30,7 @@ import (
 	"github.com/GoogleContainerTools/kpt/pkg/fn"
 	api "github.com/GoogleContainerTools/kpt/porch/api/porch/v1alpha1"
 	configapi "github.com/GoogleContainerTools/kpt/porch/api/porchconfig/v1alpha1"
+	"github.com/GoogleContainerTools/kpt/porch/internal/api/porchinternal/v1alpha1"
 	"github.com/GoogleContainerTools/kpt/porch/pkg/cache"
 	"github.com/GoogleContainerTools/kpt/porch/pkg/kpt"
 	"github.com/GoogleContainerTools/kpt/porch/pkg/meta"
@@ -38,7 +39,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -101,10 +102,17 @@ type PackageRevision struct {
 }
 
 func (p *PackageRevision) GetPackageRevision(ctx context.Context) (*api.PackageRevision, error) {
-	repoPkgRev, err := p.repoPackageRevision.GetPackageRevision(ctx)
-	if err != nil {
-		return nil, err
+	var repoPkgRev *api.PackageRevision
+	var err error
+	if p.repoPackageRevision != nil {
+		repoPkgRev, err = p.repoPackageRevision.GetPackageRevision(ctx)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		repoPkgRev = p.getPackageRevision()
 	}
+
 	var isLatest bool
 	if val, found := repoPkgRev.Labels[api.LatestPackageRevisionKey]; found && val == api.LatestPackageRevisionValue {
 		isLatest = true
@@ -124,8 +132,33 @@ func (p *PackageRevision) GetPackageRevision(ctx context.Context) (*api.PackageR
 	return repoPkgRev, nil
 }
 
+func (p *PackageRevision) getPackageRevision() *api.PackageRevision {
+	return &api.PackageRevision{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "PackageRevision",
+			APIVersion: api.SchemeGroupVersion.Identifier(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              p.packageRevisionMeta.Name,
+			Namespace:         p.packageRevisionMeta.Namespace,
+			UID:               p.packageRevisionMeta.UID,
+			ResourceVersion:   p.packageRevisionMeta.ResourceVersion,
+			CreationTimestamp: p.packageRevisionMeta.CreationTimestamp,
+		},
+		Spec: api.PackageRevisionSpec{
+			PackageName:    p.packageRevisionMeta.Spec.PackageName,
+			RepositoryName: p.packageRevisionMeta.Spec.RepositoryName,
+			Lifecycle:      p.packageRevisionMeta.Spec.Lifecycle,
+			Tasks:          p.packageRevisionMeta.Spec.Tasks,
+			ReadinessGates: p.packageRevisionMeta.Spec.ReadinessGates,
+			WorkspaceName:  p.packageRevisionMeta.Spec.WorkspaceName,
+			Revision:       p.packageRevisionMeta.Spec.Revision,
+		},
+	}
+}
+
 func (p *PackageRevision) KubeObjectName() string {
-	return p.repoPackageRevision.KubeObjectName()
+	return p.packageRevisionMeta.Name
 }
 
 func (p *PackageRevision) GetResources(ctx context.Context) (*api.PackageRevisionResources, error) {
@@ -190,34 +223,47 @@ func (cad *cadEngine) ListPackageRevisions(ctx context.Context, repositorySpec *
 	ctx, span := tracer.Start(ctx, "cadEngine::ListPackageRevisions", trace.WithAttributes())
 	defer span.End()
 
-	repo, err := cad.cache.OpenRepository(ctx, repositorySpec)
-	if err != nil {
-		return nil, err
-	}
-	pkgRevs, err := repo.ListPackageRevisions(ctx, filter)
+	pkgRevMetas, err := cad.metadataStore.List(ctx, repositorySpec)
 	if err != nil {
 		return nil, err
 	}
 
 	var packageRevisions []*PackageRevision
-	for _, pr := range pkgRevs {
-		pkgRevMeta, err := cad.metadataStore.Get(ctx, types.NamespacedName{
-			Name:      pr.KubeObjectName(),
-			Namespace: pr.KubeObjectNamespace(),
-		})
-		if err != nil {
-			// If a PackageRev CR doesn't exist, we treat the
-			// Packagerevision as not existing.
-			if apierrors.IsNotFound(err) {
-				continue
-			}
-			return nil, err
-		}
+	for _, pkgRevMeta := range pkgRevMetas {
 		packageRevisions = append(packageRevisions, &PackageRevision{
-			repoPackageRevision: pr,
+			repoPackageRevision: nil,
 			packageRevisionMeta: pkgRevMeta,
 		})
 	}
+
+	// repo, err := cad.cache.OpenRepository(ctx, repositorySpec)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// pkgRevs, err := repo.ListPackageRevisions(ctx, filter)
+	// if err != nil {
+	// 	return nil, err
+	// }
+
+	// var packageRevisions []*PackageRevision
+	// for _, pr := range pkgRevs {
+	// 	pkgRevMeta, err := cad.metadataStore.Get(ctx, types.NamespacedName{
+	// 		Name:      pr.KubeObjectName(),
+	// 		Namespace: pr.KubeObjectNamespace(),
+	// 	})
+	// 	if err != nil {
+	// 		// If a PackageRev CR doesn't exist, we treat the
+	// 		// Packagerevision as not existing.
+	// 		if apierrors.IsNotFound(err) {
+	// 			continue
+	// 		}
+	// 		return nil, err
+	// 	}
+	// 	packageRevisions = append(packageRevisions, &PackageRevision{
+	// 		repoPackageRevision: pr,
+	// 		packageRevisionMeta: pkgRevMeta,
+	// 	})
+	// }
 	return packageRevisions, nil
 }
 
@@ -269,86 +315,96 @@ func (cad *cadEngine) CreatePackageRevision(ctx context.Context, repositoryObj *
 	ctx, span := tracer.Start(ctx, "cadEngine::CreatePackageRevision", trace.WithAttributes())
 	defer span.End()
 
-	packageConfig, err := BuildPackageConfig(ctx, obj, parent)
-	if err != nil {
-		return nil, err
-	}
+	// packageConfig, err := BuildPackageConfig(ctx, obj, parent)
+	// if err != nil {
+	// 	return nil, err
+	// }
 
-	// Validate package lifecycle. Cannot create a final package
-	switch obj.Spec.Lifecycle {
-	case "":
-		// Set draft as default
-		obj.Spec.Lifecycle = api.PackageRevisionLifecycleDraft
-	case api.PackageRevisionLifecycleDraft, api.PackageRevisionLifecycleProposed:
-		// These values are ok
-	case api.PackageRevisionLifecyclePublished, api.PackageRevisionLifecycleDeletionProposed:
-		// TODO: generate errors that can be translated to correct HTTP responses
-		return nil, fmt.Errorf("cannot create a package revision with lifecycle value 'Final'")
-	default:
-		return nil, fmt.Errorf("unsupported lifecycle value: %s", obj.Spec.Lifecycle)
-	}
+	// // Validate package lifecycle. Cannot create a final package
+	// switch obj.Spec.Lifecycle {
+	// case "":
+	// 	// Set draft as default
+	// 	obj.Spec.Lifecycle = api.PackageRevisionLifecycleDraft
+	// case api.PackageRevisionLifecycleDraft, api.PackageRevisionLifecycleProposed:
+	// 	// These values are ok
+	// case api.PackageRevisionLifecyclePublished, api.PackageRevisionLifecycleDeletionProposed:
+	// 	// TODO: generate errors that can be translated to correct HTTP responses
+	// 	return nil, fmt.Errorf("cannot create a package revision with lifecycle value 'Final'")
+	// default:
+	// 	return nil, fmt.Errorf("unsupported lifecycle value: %s", obj.Spec.Lifecycle)
+	// }
 
-	repo, err := cad.cache.OpenRepository(ctx, repositoryObj)
-	if err != nil {
-		return nil, err
-	}
+	// repo, err := cad.cache.OpenRepository(ctx, repositoryObj)
+	// if err != nil {
+	// 	return nil, err
+	// }
 
-	if err := repository.ValidateWorkspaceName(obj.Spec.WorkspaceName); err != nil {
-		return nil, fmt.Errorf("failed to create packagerevision: %w", err)
-	}
+	// if err := repository.ValidateWorkspaceName(obj.Spec.WorkspaceName); err != nil {
+	// 	return nil, fmt.Errorf("failed to create packagerevision: %w", err)
+	// }
 
-	revs, err := repo.ListPackageRevisions(ctx, repository.ListPackageRevisionFilter{
-		Package: obj.Spec.PackageName})
-	if err != nil {
-		return nil, fmt.Errorf("error listing package revisions: %w", err)
-	}
+	// revs, err := repo.ListPackageRevisions(ctx, repository.ListPackageRevisionFilter{
+	// 	Package: obj.Spec.PackageName})
+	// if err != nil {
+	// 	return nil, fmt.Errorf("error listing package revisions: %w", err)
+	// }
 
-	if err := ensureUniqueWorkspaceName(obj, revs); err != nil {
-		return nil, err
-	}
+	// if err := ensureUniqueWorkspaceName(obj, revs); err != nil {
+	// 	return nil, err
+	// }
 
-	sameOrigin, err := ensureSameOrigin(ctx, repo, obj, revs)
-	if err != nil {
-		return nil, fmt.Errorf("error ensuring same origin: %w", err)
-	}
+	// sameOrigin, err := ensureSameOrigin(ctx, repo, obj, revs)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("error ensuring same origin: %w", err)
+	// }
 
-	if !sameOrigin {
-		return nil, fmt.Errorf("cannot create revision of %s with a different origin than other package revisions in the same package", obj.Spec.PackageName)
-	}
+	// if !sameOrigin {
+	// 	return nil, fmt.Errorf("cannot create revision of %s with a different origin than other package revisions in the same package", obj.Spec.PackageName)
+	// }
 
-	draft, err := repo.CreatePackageRevision(ctx, obj)
-	if err != nil {
-		return nil, err
-	}
+	// draft, err := repo.CreatePackageRevision(ctx, obj)
+	// if err != nil {
+	// 	return nil, err
+	// }
 
-	if err := cad.applyTasks(ctx, draft, repositoryObj, obj, packageConfig); err != nil {
-		return nil, err
-	}
+	// if err := cad.applyTasks(ctx, draft, repositoryObj, obj, packageConfig); err != nil {
+	// 	return nil, err
+	// }
 
-	if err := draft.UpdateLifecycle(ctx, obj.Spec.Lifecycle); err != nil {
-		return nil, err
-	}
+	// if err := draft.UpdateLifecycle(ctx, obj.Spec.Lifecycle); err != nil {
+	// 	return nil, err
+	// }
 
-	// Updates are done.
-	repoPkgRev, err := draft.Close(ctx)
-	if err != nil {
-		return nil, err
-	}
+	// // Updates are done.
+	// repoPkgRev, err := draft.Close(ctx)
+	// if err != nil {
+	// 	return nil, err
+	// }
 	pkgRevMeta := meta.PackageRevisionMeta{
-		Name:            repoPkgRev.KubeObjectName(),
-		Namespace:       repoPkgRev.KubeObjectNamespace(),
+		Name:            obj.GetName(),
+		Namespace:       obj.GetNamespace(),
 		Labels:          obj.Labels,
 		Annotations:     obj.Annotations,
 		Finalizers:      obj.Finalizers,
 		OwnerReferences: obj.OwnerReferences,
+		Spec: v1alpha1.PackageRevSpec{
+			PackageName:    obj.Spec.PackageName,
+			RepositoryName: obj.Spec.RepositoryName,
+			WorkspaceName:  obj.Spec.WorkspaceName,
+			Revision:       obj.Spec.Revision,
+			Parent:         obj.Spec.Parent,
+			Lifecycle:      obj.Spec.Lifecycle,
+			Tasks:          obj.Spec.Tasks,
+			ReadinessGates: obj.Spec.ReadinessGates,
+		},
 	}
-	pkgRevMeta, err = cad.metadataStore.Create(ctx, pkgRevMeta, repositoryObj.Name, repoPkgRev.UID())
+	pkgRevMeta, err := cad.metadataStore.Create(ctx, pkgRevMeta, repositoryObj.Name, "")
 	if err != nil {
 		return nil, err
 	}
-	cad.watcherManager.NotifyPackageRevisionChange(watch.Added, repoPkgRev, pkgRevMeta)
+	cad.watcherManager.NotifyPackageRevisionChange(watch.Added, nil, pkgRevMeta)
 	return &PackageRevision{
-		repoPackageRevision: repoPkgRev,
+		repoPackageRevision: nil,
 		packageRevisionMeta: pkgRevMeta,
 	}, nil
 }
@@ -372,7 +428,7 @@ func ensureSameOrigin(ctx context.Context, repo repository.Repository, obj *api.
 	}
 
 	tasks := obj.Spec.Tasks
-	if len(tasks) == 0 || !taskTypeOneOf(tasks[0].Type, api.TaskTypeInit, api.TaskTypeClone, api.TaskTypeEdit) {
+	if len(tasks) == 0 || !TaskTypeOneOf(tasks[0].Type, api.TaskTypeInit, api.TaskTypeClone, api.TaskTypeEdit) {
 		// If there are no tasks, or the first task is not init or clone, then this revision was not
 		// created from another package revision. That means we expect it to be the first revision
 		// for this package.
@@ -490,7 +546,7 @@ func getBaseImage(image string) string {
 	return image
 }
 
-func taskTypeOneOf(taskType api.TaskType, oneOf ...api.TaskType) bool {
+func TaskTypeOneOf(taskType api.TaskType, oneOf ...api.TaskType) bool {
 	for _, tt := range oneOf {
 		if taskType == tt {
 			return true
@@ -504,10 +560,10 @@ func (cad *cadEngine) applyTasks(ctx context.Context, draft repository.PackageDr
 
 	// Unless first task is Init or Clone, insert Init to create an empty package.
 	tasks := obj.Spec.Tasks
-	if len(tasks) == 0 || !taskTypeOneOf(tasks[0].Type, api.TaskTypeInit, api.TaskTypeClone, api.TaskTypeEdit) {
-		mutations = append(mutations, &initPackageMutation{
-			name: obj.Spec.PackageName,
-			task: &api.Task{
+	if len(tasks) == 0 || !TaskTypeOneOf(tasks[0].Type, api.TaskTypeInit, api.TaskTypeClone, api.TaskTypeEdit) {
+		mutations = append(mutations, &InitPackageMutation{
+			Name: obj.Spec.PackageName,
+			Task: &api.Task{
 				Init: &api.PackageInitTaskSpec{
 					Subpackage:  "",
 					Description: fmt.Sprintf("%s description", obj.Spec.PackageName),
@@ -546,23 +602,23 @@ func (cad *cadEngine) mapTaskToMutation(ctx context.Context, obj *api.PackageRev
 		if task.Init == nil {
 			return nil, fmt.Errorf("init not set for task of type %q", task.Type)
 		}
-		return &initPackageMutation{
-			name: obj.Spec.PackageName,
-			task: task,
+		return &InitPackageMutation{
+			Name: obj.Spec.PackageName,
+			Task: task,
 		}, nil
 	case api.TaskTypeClone:
 		if task.Clone == nil {
 			return nil, fmt.Errorf("clone not set for task of type %q", task.Type)
 		}
-		return &clonePackageMutation{
-			task:               task,
-			namespace:          obj.Namespace,
-			name:               obj.Spec.PackageName,
-			isDeployment:       isDeployment,
-			repoOpener:         cad,
-			credentialResolver: cad.credentialResolver,
-			referenceResolver:  cad.referenceResolver,
-			packageConfig:      packageConfig,
+		return &ClonePackageMutation{
+			Task:               task,
+			Namespace:          obj.Namespace,
+			Name:               obj.Spec.PackageName,
+			IsDeployment:       isDeployment,
+			RepoOpener:         cad,
+			CredentialResolver: cad.credentialResolver,
+			ReferenceResolver:  cad.referenceResolver,
+			PackageConfig:      packageConfig,
 		}, nil
 
 	case api.TaskTypeUpdate:
@@ -589,13 +645,13 @@ func (cad *cadEngine) mapTaskToMutation(ctx context.Context, obj *api.PackageRev
 		if task.Edit == nil {
 			return nil, fmt.Errorf("edit not set for task of type %q", task.Type)
 		}
-		return &editPackageMutation{
-			task:              task,
-			namespace:         obj.Namespace,
-			packageName:       obj.Spec.PackageName,
-			repositoryName:    obj.Spec.RepositoryName,
-			repoOpener:        cad,
-			referenceResolver: cad.referenceResolver,
+		return &EditPackageMutation{
+			Task:              task,
+			Namespace:         obj.Namespace,
+			PackageName:       obj.Spec.PackageName,
+			RepositoryName:    obj.Spec.RepositoryName,
+			RepoOpener:        cad,
+			ReferenceResolver: cad.referenceResolver,
 		}, nil
 
 	case api.TaskTypeEval:
@@ -612,10 +668,10 @@ func (cad *cadEngine) mapTaskToMutation(ctx context.Context, obj *api.PackageRev
 			}, nil
 		} else {
 			runnerOptions := cad.runnerOptionsResolver(obj.Namespace)
-			return &evalFunctionMutation{
-				runnerOptions: runnerOptions,
-				runtime:       cad.runtime,
-				task:          task,
+			return &EvalFunctionMutation{
+				RunnerOptions: runnerOptions,
+				Runtime:       cad.runtime,
+				Task:          task,
 			}, nil
 		}
 
@@ -627,178 +683,201 @@ func (cad *cadEngine) mapTaskToMutation(ctx context.Context, obj *api.PackageRev
 func (cad *cadEngine) UpdatePackageRevision(ctx context.Context, repositoryObj *configapi.Repository, oldPackage *PackageRevision, oldObj, newObj *api.PackageRevision, parent *PackageRevision) (*PackageRevision, error) {
 	ctx, span := tracer.Start(ctx, "cadEngine::UpdatePackageRevision", trace.WithAttributes())
 	defer span.End()
-
-	repo, err := cad.cache.OpenRepository(ctx, repositoryObj)
+	pkgRevMeta := meta.PackageRevisionMeta{
+		Name:            newObj.GetName(),
+		Namespace:       newObj.GetNamespace(),
+		Labels:          newObj.Labels,
+		Annotations:     newObj.Annotations,
+		Finalizers:      newObj.Finalizers,
+		OwnerReferences: newObj.OwnerReferences,
+		Spec: v1alpha1.PackageRevSpec{
+			PackageName:    newObj.Spec.PackageName,
+			RepositoryName: newObj.Spec.RepositoryName,
+			WorkspaceName:  newObj.Spec.WorkspaceName,
+			Revision:       newObj.Spec.Revision,
+			Parent:         newObj.Spec.Parent,
+			Lifecycle:      newObj.Spec.Lifecycle,
+			Tasks:          newObj.Spec.Tasks,
+			ReadinessGates: newObj.Spec.ReadinessGates,
+		},
+	}
+	var err error
+	pkgRevMeta, err = cad.metadataStore.Update(ctx, pkgRevMeta)
 	if err != nil {
 		return nil, err
 	}
 
-	// Check if the PackageRevision is in the terminating state and
-	// and this request removes the last finalizer.
-	repoPkgRev := oldPackage.repoPackageRevision
-	pkgRevMetaNN := types.NamespacedName{
-		Name:      repoPkgRev.KubeObjectName(),
-		Namespace: repoPkgRev.KubeObjectNamespace(),
-	}
-	pkgRevMeta, err := cad.metadataStore.Get(ctx, pkgRevMetaNN)
-	if err != nil {
-		return nil, err
-	}
-	// If this is in the terminating state and we are removing the last finalizer,
-	// we delete the resource instead of updating it.
-	if pkgRevMeta.DeletionTimestamp != nil && len(newObj.Finalizers) == 0 {
-		if err := cad.deletePackageRevision(ctx, repo, repoPkgRev, pkgRevMeta); err != nil {
-			return nil, err
-		}
-		return ToPackageRevision(repoPkgRev, pkgRevMeta), nil
-	}
+	cad.watcherManager.NotifyPackageRevisionChange(watch.Modified, nil, pkgRevMeta)
+	return ToPackageRevision(nil, pkgRevMeta), nil
 
-	// Validate package lifecycle. Can only update a draft.
-	switch lifecycle := oldObj.Spec.Lifecycle; lifecycle {
-	default:
-		return nil, fmt.Errorf("invalid original lifecycle value: %q", lifecycle)
-	case api.PackageRevisionLifecycleDraft, api.PackageRevisionLifecycleProposed:
-		// Draft or proposed can be updated.
-	case api.PackageRevisionLifecyclePublished, api.PackageRevisionLifecycleDeletionProposed:
-		// Only metadata (currently labels and annotations) and lifecycle can be updated for published packages.
-		if oldObj.Spec.Lifecycle != newObj.Spec.Lifecycle {
-			if err := oldPackage.repoPackageRevision.UpdateLifecycle(ctx, newObj.Spec.Lifecycle); err != nil {
-				return nil, err
-			}
-		}
+	// repo, err := cad.cache.OpenRepository(ctx, repositoryObj)
+	// if err != nil {
+	// 	return nil, err
+	// }
 
-		pkgRevMeta, err = cad.updatePkgRevMeta(ctx, repoPkgRev, newObj)
-		if err != nil {
-			return nil, err
-		}
+	// // Check if the PackageRevision is in the terminating state and
+	// // and this request removes the last finalizer.
+	// repoPkgRev := oldPackage.repoPackageRevision
+	// pkgRevMetaNN := types.NamespacedName{
+	// 	Name:      repoPkgRev.KubeObjectName(),
+	// 	Namespace: repoPkgRev.KubeObjectNamespace(),
+	// }
+	// pkgRevMeta, err := cad.metadataStore.Get(ctx, pkgRevMetaNN)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// // If this is in the terminating state and we are removing the last finalizer,
+	// // we delete the resource instead of updating it.
+	// if pkgRevMeta.DeletionTimestamp != nil && len(newObj.Finalizers) == 0 {
+	// 	if err := cad.deletePackageRevision(ctx, repo, repoPkgRev, pkgRevMeta); err != nil {
+	// 		return nil, err
+	// 	}
+	// 	return ToPackageRevision(repoPkgRev, pkgRevMeta), nil
+	// }
 
-		cad.watcherManager.NotifyPackageRevisionChange(watch.Modified, repoPkgRev, pkgRevMeta)
-		return ToPackageRevision(repoPkgRev, pkgRevMeta), nil
-	}
-	switch lifecycle := newObj.Spec.Lifecycle; lifecycle {
-	default:
-		return nil, fmt.Errorf("invalid desired lifecycle value: %q", lifecycle)
-	case api.PackageRevisionLifecycleDraft, api.PackageRevisionLifecycleProposed, api.PackageRevisionLifecyclePublished, api.PackageRevisionLifecycleDeletionProposed:
-		// These values are ok
-	}
+	// // Validate package lifecycle. Can only update a draft.
+	// switch lifecycle := oldObj.Spec.Lifecycle; lifecycle {
+	// default:
+	// 	return nil, fmt.Errorf("invalid original lifecycle value: %q", lifecycle)
+	// case api.PackageRevisionLifecycleDraft, api.PackageRevisionLifecycleProposed:
+	// 	// Draft or proposed can be updated.
+	// case api.PackageRevisionLifecyclePublished, api.PackageRevisionLifecycleDeletionProposed:
+	// 	// Only metadata (currently labels and annotations) and lifecycle can be updated for published packages.
+	// 	if oldObj.Spec.Lifecycle != newObj.Spec.Lifecycle {
+	// 		if err := oldPackage.repoPackageRevision.UpdateLifecycle(ctx, newObj.Spec.Lifecycle); err != nil {
+	// 			return nil, err
+	// 		}
+	// 	}
 
-	if isRecloneAndReplay(oldObj, newObj) {
-		packageConfig, err := BuildPackageConfig(ctx, newObj, parent)
-		if err != nil {
-			return nil, err
-		}
-		repoPkgRev, err := cad.recloneAndReplay(ctx, repo, repositoryObj, newObj, packageConfig)
-		if err != nil {
-			return nil, err
-		}
+	// 	pkgRevMeta, err = cad.updatePkgRevMeta(ctx, repoPkgRev, newObj)
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
 
-		pkgRevMeta, err = cad.updatePkgRevMeta(ctx, repoPkgRev, newObj)
-		if err != nil {
-			return nil, err
-		}
+	// 	cad.watcherManager.NotifyPackageRevisionChange(watch.Modified, repoPkgRev, pkgRevMeta)
+	// 	return ToPackageRevision(repoPkgRev, pkgRevMeta), nil
+	// }
+	// switch lifecycle := newObj.Spec.Lifecycle; lifecycle {
+	// default:
+	// 	return nil, fmt.Errorf("invalid desired lifecycle value: %q", lifecycle)
+	// case api.PackageRevisionLifecycleDraft, api.PackageRevisionLifecycleProposed, api.PackageRevisionLifecyclePublished, api.PackageRevisionLifecycleDeletionProposed:
+	// 	// These values are ok
+	// }
 
-		cad.watcherManager.NotifyPackageRevisionChange(watch.Modified, repoPkgRev, pkgRevMeta)
-		return ToPackageRevision(repoPkgRev, pkgRevMeta), nil
-	}
+	// if isRecloneAndReplay(oldObj, newObj) {
+	// 	packageConfig, err := BuildPackageConfig(ctx, newObj, parent)
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+	// 	repoPkgRev, err := cad.recloneAndReplay(ctx, repo, repositoryObj, newObj, packageConfig)
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
 
-	var mutations []Mutation
-	if len(oldObj.Spec.Tasks) > len(newObj.Spec.Tasks) {
-		return nil, fmt.Errorf("removing tasks is not yet supported")
-	}
-	for i := range oldObj.Spec.Tasks {
-		oldTask := &oldObj.Spec.Tasks[i]
-		newTask := &newObj.Spec.Tasks[i]
-		if oldTask.Type != newTask.Type {
-			return nil, fmt.Errorf("changing task types is not yet supported")
-		}
-	}
-	if len(newObj.Spec.Tasks) > len(oldObj.Spec.Tasks) {
-		if len(newObj.Spec.Tasks) > len(oldObj.Spec.Tasks)+1 {
-			return nil, fmt.Errorf("can only append one task at a time")
-		}
+	// 	pkgRevMeta, err = cad.updatePkgRevMeta(ctx, repoPkgRev, newObj)
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
 
-		newTask := newObj.Spec.Tasks[len(newObj.Spec.Tasks)-1]
-		if newTask.Type != api.TaskTypeUpdate {
-			return nil, fmt.Errorf("appended task is type %q, must be type %q", newTask.Type, api.TaskTypeUpdate)
-		}
-		if newTask.Update == nil {
-			return nil, fmt.Errorf("update not set for updateTask of type %q", newTask.Type)
-		}
+	// 	cad.watcherManager.NotifyPackageRevisionChange(watch.Modified, repoPkgRev, pkgRevMeta)
+	// 	return ToPackageRevision(repoPkgRev, pkgRevMeta), nil
+	// }
 
-		cloneTask := FindCloneTask(oldObj)
-		if cloneTask == nil {
-			return nil, fmt.Errorf("upstream source not found for package rev %q; only cloned packages can be updated", oldObj.Spec.PackageName)
-		}
+	// var mutations []Mutation
+	// if len(oldObj.Spec.Tasks) > len(newObj.Spec.Tasks) {
+	// 	return nil, fmt.Errorf("removing tasks is not yet supported")
+	// }
+	// for i := range oldObj.Spec.Tasks {
+	// 	oldTask := &oldObj.Spec.Tasks[i]
+	// 	newTask := &newObj.Spec.Tasks[i]
+	// 	if oldTask.Type != newTask.Type {
+	// 		return nil, fmt.Errorf("changing task types is not yet supported")
+	// 	}
+	// }
+	// if len(newObj.Spec.Tasks) > len(oldObj.Spec.Tasks) {
+	// 	if len(newObj.Spec.Tasks) > len(oldObj.Spec.Tasks)+1 {
+	// 		return nil, fmt.Errorf("can only append one task at a time")
+	// 	}
 
-		mutation := &UpdatePackageMutation{
-			CloneTask:         cloneTask,
-			UpdateTask:        &newTask,
-			RepoOpener:        cad,
-			ReferenceResolver: cad.referenceResolver,
-			Namespace:         repositoryObj.Namespace,
-			PkgName:           oldObj.GetName(),
-		}
-		mutations = append(mutations, mutation)
-	}
+	// 	newTask := newObj.Spec.Tasks[len(newObj.Spec.Tasks)-1]
+	// 	if newTask.Type != api.TaskTypeUpdate {
+	// 		return nil, fmt.Errorf("appended task is type %q, must be type %q", newTask.Type, api.TaskTypeUpdate)
+	// 	}
+	// 	if newTask.Update == nil {
+	// 		return nil, fmt.Errorf("update not set for updateTask of type %q", newTask.Type)
+	// 	}
 
-	// Re-render if we are making changes.
-	mutations = cad.conditionalAddRender(newObj, mutations)
+	// 	cloneTask := FindCloneTask(oldObj)
+	// 	if cloneTask == nil {
+	// 		return nil, fmt.Errorf("upstream source not found for package rev %q; only cloned packages can be updated", oldObj.Spec.PackageName)
+	// 	}
 
-	draft, err := repo.UpdatePackageRevision(ctx, oldPackage.repoPackageRevision)
-	if err != nil {
-		return nil, err
-	}
+	// 	mutation := &UpdatePackageMutation{
+	// 		CloneTask:         cloneTask,
+	// 		UpdateTask:        &newTask,
+	// 		RepoOpener:        cad,
+	// 		ReferenceResolver: cad.referenceResolver,
+	// 		Namespace:         repositoryObj.Namespace,
+	// 		PkgName:           oldObj.GetName(),
+	// 	}
+	// 	mutations = append(mutations, mutation)
+	// }
 
-	// If any of the fields in the API that are projections from the Kptfile
-	// must be updated in the Kptfile as well.
-	kfPatchTask, created, err := CreateKptfilePatchTask(ctx, oldPackage.repoPackageRevision, newObj)
-	if err != nil {
-		return nil, err
-	}
-	if created {
-		kfPatchMutation, err := BuildPatchMutation(ctx, kfPatchTask)
-		if err != nil {
-			return nil, err
-		}
-		mutations = append(mutations, kfPatchMutation)
-	}
+	// // Re-render if we are making changes.
+	// mutations = cad.conditionalAddRender(newObj, mutations)
 
-	// Re-render if we are making changes.
-	mutations = cad.conditionalAddRender(newObj, mutations)
+	// draft, err := repo.UpdatePackageRevision(ctx, oldPackage.repoPackageRevision)
+	// if err != nil {
+	// 	return nil, err
+	// }
 
-	// TODO: Handle the case if alongside lifecycle change, tasks are changed too.
-	// Update package contents only if the package is in draft state
-	if oldObj.Spec.Lifecycle == api.PackageRevisionLifecycleDraft {
-		apiResources, err := oldPackage.GetResources(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("cannot get package resources: %w", err)
-		}
-		resources := repository.PackageResources{
-			Contents: apiResources.Spec.Resources,
-		}
+	// // If any of the fields in the API that are projections from the Kptfile
+	// // must be updated in the Kptfile as well.
+	// kfPatchTask, created, err := CreateKptfilePatchTask(ctx, oldPackage.repoPackageRevision, newObj)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// if created {
+	// 	kfPatchMutation, err := BuildPatchMutation(ctx, kfPatchTask)
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+	// 	mutations = append(mutations, kfPatchMutation)
+	// }
 
-		if _, _, err := ApplyResourceMutations(ctx, draft, resources, mutations); err != nil {
-			return nil, err
-		}
-	}
+	// // Re-render if we are making changes.
+	// mutations = cad.conditionalAddRender(newObj, mutations)
 
-	if err := draft.UpdateLifecycle(ctx, newObj.Spec.Lifecycle); err != nil {
-		return nil, err
-	}
+	// // TODO: Handle the case if alongside lifecycle change, tasks are changed too.
+	// // Update package contents only if the package is in draft state
+	// if oldObj.Spec.Lifecycle == api.PackageRevisionLifecycleDraft {
+	// 	apiResources, err := oldPackage.GetResources(ctx)
+	// 	if err != nil {
+	// 		return nil, fmt.Errorf("cannot get package resources: %w", err)
+	// 	}
+	// 	resources := repository.PackageResources{
+	// 		Contents: apiResources.Spec.Resources,
+	// 	}
 
-	// Updates are done.
-	repoPkgRev, err = draft.Close(ctx)
-	if err != nil {
-		return nil, err
-	}
+	// 	if _, _, err := ApplyResourceMutations(ctx, draft, resources, mutations); err != nil {
+	// 		return nil, err
+	// 	}
+	// }
 
-	pkgRevMeta, err = cad.updatePkgRevMeta(ctx, repoPkgRev, newObj)
-	if err != nil {
-		return nil, err
-	}
+	// if err := draft.UpdateLifecycle(ctx, newObj.Spec.Lifecycle); err != nil {
+	// 	return nil, err
+	// }
 
-	cad.watcherManager.NotifyPackageRevisionChange(watch.Modified, repoPkgRev, pkgRevMeta)
-	return ToPackageRevision(repoPkgRev, pkgRevMeta), nil
+	// // Updates are done.
+	// repoPkgRev, err = draft.Close(ctx)
+	// if err != nil {
+	// 	return nil, err
+	// }
+
+	// pkgRevMeta, err = cad.updatePkgRevMeta(ctx, repoPkgRev, newObj)
+	// if err != nil {
+	// 	return nil, err
+	// }
 }
 
 func (cad *cadEngine) updatePkgRevMeta(ctx context.Context, repoPkgRev repository.PackageRevision, apiPkgRev *api.PackageRevision) (meta.PackageRevisionMeta, error) {

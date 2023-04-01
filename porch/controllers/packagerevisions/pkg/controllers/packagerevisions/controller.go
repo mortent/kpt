@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/GoogleContainerTools/kpt/internal/builtins"
 	"github.com/GoogleContainerTools/kpt/internal/fnruntime"
 	"github.com/GoogleContainerTools/kpt/pkg/fn"
 	"github.com/GoogleContainerTools/kpt/porch/api/porch/v1alpha1"
@@ -135,7 +136,30 @@ func (r *PackageRevisionReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, err
 	}
 	if len(repoPkgRevs) == 0 {
-		klog.Infof("no repo revision found for %s", pkgRev.Name)
+		klog.Info("Creating new PackageRevision")
+		draft, err := repo.CreatePackageRevision(ctx, &pkgRev)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+
+		packageConfig, err := engine.BuildPackageConfig(ctx, &pkgRev, nil)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+
+		if err := r.applyTasks(ctx, draft, &repoObj, &pkgRev, packageConfig); err != nil {
+			return ctrl.Result{}, err
+		}
+
+		if err := draft.UpdateLifecycle(ctx, pkgRev.Spec.Lifecycle); err != nil {
+			return ctrl.Result{}, err
+		}
+
+		// Updates are done.
+		_, err = draft.Close(ctx)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
 		return ctrl.Result{}, nil
 	}
 
@@ -237,6 +261,127 @@ func (r *PackageRevisionReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	return ctrl.Result{}, nil
+}
+
+func (r *PackageRevisionReconciler) applyTasks(ctx context.Context, draft repository.PackageDraft, repositoryObj *configapi.Repository, obj *v1alpha1.PackageRevision, packageConfig *builtins.PackageConfig) error {
+	var mutations []engine.Mutation
+
+	// Unless first task is Init or Clone, insert Init to create an empty package.
+	tasks := obj.Spec.Tasks
+	if len(tasks) == 0 || !engine.TaskTypeOneOf(tasks[0].Type, v1alpha1.TaskTypeInit, v1alpha1.TaskTypeClone, v1alpha1.TaskTypeEdit) {
+		mutations = append(mutations, &engine.InitPackageMutation{
+			Name: obj.Spec.PackageName,
+			Task: &v1alpha1.Task{
+				Init: &v1alpha1.PackageInitTaskSpec{
+					Subpackage:  "",
+					Description: fmt.Sprintf("%s description", obj.Spec.PackageName),
+				},
+			},
+		})
+	}
+
+	for i := range tasks {
+		task := &tasks[i]
+		mutation, err := r.mapTaskToMutation(ctx, obj, task, repositoryObj.Spec.Deployment, packageConfig)
+		if err != nil {
+			return err
+		}
+		mutations = append(mutations, mutation)
+	}
+
+	// Render package after creation.
+	mutations = r.conditionalAddRender(obj, mutations)
+
+	baseResources := repository.PackageResources{}
+	if _, _, err := engine.ApplyResourceMutations(ctx, draft, baseResources, mutations); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (r *PackageRevisionReconciler) mapTaskToMutation(ctx context.Context, obj *v1alpha1.PackageRevision, task *v1alpha1.Task, isDeployment bool, packageConfig *builtins.PackageConfig) (engine.Mutation, error) {
+	switch task.Type {
+	case v1alpha1.TaskTypeInit:
+		if task.Init == nil {
+			return nil, fmt.Errorf("init not set for task of type %q", task.Type)
+		}
+		return &engine.InitPackageMutation{
+			Name: obj.Spec.PackageName,
+			Task: task,
+		}, nil
+	case v1alpha1.TaskTypeClone:
+		if task.Clone == nil {
+			return nil, fmt.Errorf("clone not set for task of type %q", task.Type)
+		}
+		return &engine.ClonePackageMutation{
+			Task:               task,
+			Namespace:          obj.Namespace,
+			Name:               obj.Spec.PackageName,
+			IsDeployment:       isDeployment,
+			RepoOpener:         r.engine,
+			CredentialResolver: nil,
+			ReferenceResolver:  r.referenceResolver,
+			PackageConfig:      packageConfig,
+		}, nil
+
+	case v1alpha1.TaskTypeUpdate:
+		if task.Update == nil {
+			return nil, fmt.Errorf("update not set for task of type %q", task.Type)
+		}
+		cloneTask := engine.FindCloneTask(obj)
+		if cloneTask == nil {
+			return nil, fmt.Errorf("upstream source not found for package rev %q; only cloned packages can be updated", obj.Spec.PackageName)
+		}
+		return &engine.UpdatePackageMutation{
+			CloneTask:         cloneTask,
+			UpdateTask:        task,
+			Namespace:         obj.Namespace,
+			RepoOpener:        r.engine,
+			ReferenceResolver: r.referenceResolver,
+			PkgName:           obj.Spec.PackageName,
+		}, nil
+
+	case v1alpha1.TaskTypePatch:
+		return engine.BuildPatchMutation(ctx, task)
+
+	case v1alpha1.TaskTypeEdit:
+		if task.Edit == nil {
+			return nil, fmt.Errorf("edit not set for task of type %q", task.Type)
+		}
+		return &engine.EditPackageMutation{
+			Task:              task,
+			Namespace:         obj.Namespace,
+			PackageName:       obj.Spec.PackageName,
+			RepositoryName:    obj.Spec.RepositoryName,
+			RepoOpener:        r.engine,
+			ReferenceResolver: r.referenceResolver,
+		}, nil
+
+	case v1alpha1.TaskTypeEval:
+		if task.Eval == nil {
+			return nil, fmt.Errorf("eval not set for task of type %q", task.Type)
+		}
+		// TODO: We should find a different way to do this. Probably a separate
+		// task for render.
+		if task.Eval.Image == "render" {
+			runnerOptions := r.runnerOptionsResolver(obj.Namespace)
+			return &engine.RenderPackageMutation{
+				RunnerOptions: runnerOptions,
+				Runtime:       r.runtime,
+			}, nil
+		} else {
+			runnerOptions := r.runnerOptionsResolver(obj.Namespace)
+			return &engine.EvalFunctionMutation{
+				RunnerOptions: runnerOptions,
+				Runtime:       r.runtime,
+				Task:          task,
+			}, nil
+		}
+
+	default:
+		return nil, fmt.Errorf("task of type %q not supported", task.Type)
+	}
 }
 
 // conditionalAddRender adds a render mutation to the end of the mutations slice if the last

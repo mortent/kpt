@@ -27,7 +27,6 @@ import (
 	"github.com/GoogleContainerTools/kpt/porch/pkg/repository"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/klog/v2"
@@ -440,23 +439,23 @@ func (r *cachedRepository) refreshAllCachedPackages(ctx context.Context) (map[re
 	r.cachedPackageRevisions = newPackageRevisionMap
 	r.cachedPackages = newPackageMap
 
-	// We go through all PackageRev CRs that represents PackageRevisions
-	// in the current repo and make sure they all have a corresponding
-	// PackageRevision. The ones that doesn't is removed.
-	for _, prm := range existingPkgRevCRs {
-		if _, found := newPackageRevisionNames[prm.Name]; !found {
-			if _, err := r.metadataStore.Delete(ctx, types.NamespacedName{
-				Name:      prm.Name,
-				Namespace: prm.Namespace,
-			}, true); err != nil {
-				if !apierrors.IsNotFound(err) {
-					// This will be retried the next time the sync runs.
-					klog.Warningf("unable to delete PackageRev CR for %s/%s: %w",
-						prm.Name, prm.Namespace, err)
-				}
-			}
-		}
-	}
+	// // We go through all PackageRev CRs that represents PackageRevisions
+	// // in the current repo and make sure they all have a corresponding
+	// // PackageRevision. The ones that doesn't is removed.
+	// for _, prm := range existingPkgRevCRs {
+	// 	if _, found := newPackageRevisionNames[prm.Name]; !found {
+	// 		if _, err := r.metadataStore.Delete(ctx, types.NamespacedName{
+	// 			Name:      prm.Name,
+	// 			Namespace: prm.Namespace,
+	// 		}, true); err != nil {
+	// 			if !apierrors.IsNotFound(err) {
+	// 				// This will be retried the next time the sync runs.
+	// 				klog.Warningf("unable to delete PackageRev CR for %s/%s: %w",
+	// 					prm.Name, prm.Namespace, err)
+	// 			}
+	// 		}
+	// 	}
+	// }
 
 	// We go through all the PackageRevisions and make sure they have
 	// a corresponding PackageRev CR.

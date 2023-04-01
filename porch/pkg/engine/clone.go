@@ -32,35 +32,35 @@ import (
 	"k8s.io/klog/v2"
 )
 
-type clonePackageMutation struct {
-	task *api.Task
+type ClonePackageMutation struct {
+	Task *api.Task
 
-	// namespace is the namespace against which we resolve references.
-	// TODO: merge namespace into referenceResolver?
-	namespace string
+	// Namespace is the Namespace against which we resolve references.
+	// TODO: merge Namespace into referenceResolver?
+	Namespace string
 
-	name               string // package target name
-	isDeployment       bool   // is the package deployable instance
-	repoOpener         RepositoryOpener
-	credentialResolver repository.CredentialResolver
-	referenceResolver  ReferenceResolver
+	Name               string // package target name
+	IsDeployment       bool   // is the package deployable instance
+	RepoOpener         RepositoryOpener
+	CredentialResolver repository.CredentialResolver
+	ReferenceResolver  ReferenceResolver
 
-	// packageConfig contains the package configuration.
-	packageConfig *builtins.PackageConfig
+	// PackageConfig contains the package configuration.
+	PackageConfig *builtins.PackageConfig
 }
 
-func (m *clonePackageMutation) Apply(ctx context.Context, resources repository.PackageResources) (repository.PackageResources, *api.TaskResult, error) {
+func (m *ClonePackageMutation) Apply(ctx context.Context, resources repository.PackageResources) (repository.PackageResources, *api.TaskResult, error) {
 	ctx, span := tracer.Start(ctx, "clonePackageMutation::Apply", trace.WithAttributes())
 	defer span.End()
 
 	var cloned repository.PackageResources
 	var err error
 
-	if ref := m.task.Clone.Upstream.UpstreamRef; ref != nil {
+	if ref := m.Task.Clone.Upstream.UpstreamRef; ref != nil {
 		cloned, err = m.cloneFromRegisteredRepository(ctx, ref)
-	} else if git := m.task.Clone.Upstream.Git; git != nil {
+	} else if git := m.Task.Clone.Upstream.Git; git != nil {
 		cloned, err = m.cloneFromGit(ctx, git)
-	} else if oci := m.task.Clone.Upstream.Oci; oci != nil {
+	} else if oci := m.Task.Clone.Upstream.Oci; oci != nil {
 		cloned, err = m.cloneFromOci(ctx, oci)
 	} else {
 		err = errors.New("invalid clone source (neither of git, oci, nor upstream were specified)")
@@ -77,10 +77,10 @@ func (m *clonePackageMutation) Apply(ctx context.Context, resources repository.P
 		}
 	}
 
-	if m.isDeployment {
+	if m.IsDeployment {
 		// TODO(droot): executing this as mutation is not really needed, but can be
 		// refactored once we finalize the task/mutation/commit model.
-		genPkgContextMutation, err := newPackageContextGeneratorMutation(m.packageConfig)
+		genPkgContextMutation, err := newPackageContextGeneratorMutation(m.PackageConfig)
 		if err != nil {
 			return repository.PackageResources{}, nil, err
 		}
@@ -99,18 +99,18 @@ func (m *clonePackageMutation) Apply(ctx context.Context, resources repository.P
 		klog.Infof("failed to add merge-key to resources %v", err)
 	}
 
-	return result, &api.TaskResult{Task: m.task}, nil
+	return result, &api.TaskResult{Task: m.Task}, nil
 }
 
-func (m *clonePackageMutation) cloneFromRegisteredRepository(ctx context.Context, ref *api.PackageRevisionRef) (repository.PackageResources, error) {
+func (m *ClonePackageMutation) cloneFromRegisteredRepository(ctx context.Context, ref *api.PackageRevisionRef) (repository.PackageResources, error) {
 	if ref.Name == "" {
 		return repository.PackageResources{}, fmt.Errorf("upstreamRef.name is required")
 	}
 
 	upstreamRevision, err := (&PackageFetcher{
-		repoOpener:        m.repoOpener,
-		referenceResolver: m.referenceResolver,
-	}).FetchRevision(ctx, ref, m.namespace)
+		repoOpener:        m.RepoOpener,
+		referenceResolver: m.ReferenceResolver,
+	}).FetchRevision(ctx, ref, m.Namespace)
 	if err != nil {
 		return repository.PackageResources{}, fmt.Errorf("failed to fetch package revision %q: %w", ref.Name, err)
 	}
@@ -126,7 +126,7 @@ func (m *clonePackageMutation) cloneFromRegisteredRepository(ctx context.Context
 	}
 
 	// Update Kptfile
-	if err := kpt.UpdateKptfileUpstream(m.name, resources.Spec.Resources, upstream, lock); err != nil {
+	if err := kpt.UpdateKptfileUpstream(m.Name, resources.Spec.Resources, upstream, lock); err != nil {
 		return repository.PackageResources{}, fmt.Errorf("failed to apply upstream lock to package %q: %w", ref.Name, err)
 	}
 
@@ -135,7 +135,7 @@ func (m *clonePackageMutation) cloneFromRegisteredRepository(ctx context.Context
 	}, nil
 }
 
-func (m *clonePackageMutation) cloneFromGit(ctx context.Context, gitPackage *api.GitPackage) (repository.PackageResources, error) {
+func (m *ClonePackageMutation) cloneFromGit(ctx context.Context, gitPackage *api.GitPackage) (repository.PackageResources, error) {
 	// TODO: Cache unregistered repositories with appropriate cache eviction policy.
 	// TODO: Separate low-level repository access from Repository abstraction?
 
@@ -154,7 +154,7 @@ func (m *clonePackageMutation) cloneFromGit(ctx context.Context, gitPackage *api
 	defer os.RemoveAll(dir)
 
 	r, err := git.OpenRepository(ctx, "", "", &spec, false, dir, git.GitRepositoryOptions{
-		CredentialResolver: m.credentialResolver,
+		CredentialResolver: m.CredentialResolver,
 		MainBranchStrategy: git.SkipVerification, // We are only reading so we don't need the main branch to exist.
 	})
 	if err != nil {
@@ -174,7 +174,7 @@ func (m *clonePackageMutation) cloneFromGit(ctx context.Context, gitPackage *api
 	contents := resources.Spec.Resources
 
 	// Update Kptfile
-	if err := kpt.UpdateKptfileUpstream(m.name, contents, v1.Upstream{
+	if err := kpt.UpdateKptfileUpstream(m.Name, contents, v1.Upstream{
 		Type: v1.GitOrigin,
 		Git: &v1.Git{
 			Repo:      lock.Repo,
@@ -193,7 +193,7 @@ func (m *clonePackageMutation) cloneFromGit(ctx context.Context, gitPackage *api
 	}, nil
 }
 
-func (m *clonePackageMutation) cloneFromOci(ctx context.Context, ociPackage *api.OciPackage) (repository.PackageResources, error) {
+func (m *ClonePackageMutation) cloneFromOci(ctx context.Context, ociPackage *api.OciPackage) (repository.PackageResources, error) {
 	return repository.PackageResources{}, errors.New("clone from OCI is not implemented")
 }
 

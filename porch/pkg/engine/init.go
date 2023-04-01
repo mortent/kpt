@@ -18,7 +18,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/GoogleContainerTools/kpt/pkg/kptpkg"
+	Kptpkg "github.com/GoogleContainerTools/kpt/pkg/kptpkg"
 	"github.com/GoogleContainerTools/kpt/pkg/printer"
 	"github.com/GoogleContainerTools/kpt/pkg/printer/fake"
 	api "github.com/GoogleContainerTools/kpt/porch/api/porch/v1alpha1"
@@ -27,15 +27,15 @@ import (
 	"sigs.k8s.io/kustomize/kyaml/filesys"
 )
 
-type initPackageMutation struct {
-	kptpkg.DefaultInitializer
-	name string
-	task *api.Task
+type InitPackageMutation struct {
+	Kptpkg.DefaultInitializer
+	Name string
+	Task *api.Task
 }
 
-var _ Mutation = &initPackageMutation{}
+var _ Mutation = &InitPackageMutation{}
 
-func (m *initPackageMutation) Apply(ctx context.Context, resources repository.PackageResources) (repository.PackageResources, *api.TaskResult, error) {
+func (m *InitPackageMutation) Apply(ctx context.Context, resources repository.PackageResources) (repository.PackageResources, *api.TaskResult, error) {
 	ctx, span := tracer.Start(ctx, "initPackageMutation::Apply", trace.WithAttributes())
 	defer span.End()
 
@@ -43,21 +43,21 @@ func (m *initPackageMutation) Apply(ctx context.Context, resources repository.Pa
 	// virtual fs expected a rooted filesystem
 	pkgPath := "/"
 
-	if m.task.Init.Subpackage != "" {
-		pkgPath = "/" + m.task.Init.Subpackage
+	if m.Task.Init.Subpackage != "" {
+		pkgPath = "/" + m.Task.Init.Subpackage
 	}
 	if err := fs.Mkdir(pkgPath); err != nil {
 		return repository.PackageResources{}, nil, err
 	}
-	err := m.Initialize(printer.WithContext(ctx, &fake.Printer{}), fs, kptpkg.InitOptions{
+	err := m.Initialize(printer.WithContext(ctx, &fake.Printer{}), fs, Kptpkg.InitOptions{
 		PkgPath:  pkgPath,
-		PkgName:  m.name,
-		Desc:     m.task.Init.Description,
-		Keywords: m.task.Init.Keywords,
-		Site:     m.task.Init.Site,
+		PkgName:  m.Name,
+		Desc:     m.Task.Init.Description,
+		Keywords: m.Task.Init.Keywords,
+		Site:     m.Task.Init.Site,
 	})
 	if err != nil {
-		return repository.PackageResources{}, nil, fmt.Errorf("failed to initialize pkg %q: %w", m.name, err)
+		return repository.PackageResources{}, nil, fmt.Errorf("failed to initialize pkg %q: %w", m.Name, err)
 	}
 
 	result, err := readResources(fs)
@@ -65,5 +65,5 @@ func (m *initPackageMutation) Apply(ctx context.Context, resources repository.Pa
 		return repository.PackageResources{}, nil, err
 	}
 
-	return result, &api.TaskResult{Task: m.task}, nil
+	return result, &api.TaskResult{Task: m.Task}, nil
 }

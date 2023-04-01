@@ -69,7 +69,7 @@ info:
 		repository: repo,
 	}
 
-	epm := editPackageMutation{
+	epm := EditPackageMutation{
 		task: &v1alpha1.Task{
 			Type: "edit",
 			Edit: &v1alpha1.PackageEditTaskSpec{
