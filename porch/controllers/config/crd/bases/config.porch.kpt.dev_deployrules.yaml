@@ -5,20 +5,19 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.8.0
   creationTimestamp: null
-  name: rootsyncsets.config.porch.kpt.dev
+  name: deployrules.config.porch.kpt.dev
 spec:
   group: config.porch.kpt.dev
   names:
-    kind: RootSyncSet
-    listKind: RootSyncSetList
-    plural: rootsyncsets
-    singular: rootsyncset
+    kind: DeployRule
+    listKind: DeployRuleList
+    plural: deployrules
+    singular: deployrule
   scope: Namespaced
   versions:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: RootSyncSet is the Schema for the rootsyncsets API
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -33,83 +32,10 @@ spec:
           metadata:
             type: object
           spec:
-            description: RootSyncSetSpec defines the desired state of RootSyncSet
-            properties:
-              clusterRefs:
-                items:
-                  properties:
-                    apiVersion:
-                      type: string
-                    kind:
-                      type: string
-                    name:
-                      type: string
-                    namespace:
-                      type: string
-                  type: object
-                type: array
-              template:
-                properties:
-                  spec:
-                    properties:
-                      git:
-                        properties:
-                          auth:
-                            type: string
-                          branch:
-                            type: string
-                          dir:
-                            type: string
-                          gcpServiceAccountEmail:
-                            type: string
-                          noSSLVerify:
-                            type: boolean
-                          period:
-                            type: string
-                          proxy:
-                            type: string
-                          repo:
-                            type: string
-                          revision:
-                            type: string
-                          secretRef:
-                            description: SecretReference contains the reference to
-                              the secret used to connect to Git source of truth.
-                            properties:
-                              name:
-                                description: Name represents the secret name.
-                                type: string
-                            type: object
-                        required:
-                        - auth
-                        - repo
-                        type: object
-                      sourceFormat:
-                        type: string
-                    type: object
-                type: object
             type: object
           status:
-            description: RootSyncSetStatus defines the observed state of RootSyncSet
             properties:
-              clusterRefStatuses:
-                items:
-                  properties:
-                    apiVersion:
-                      type: string
-                    kind:
-                      type: string
-                    name:
-                      type: string
-                    namespace:
-                      type: string
-                    syncStatus:
-                      type: string
-                  type: object
-                type: array
               conditions:
-                description: Conditions describes the reconciliation state of the
-                  object.
                 items:
                   description: "Condition contains details for one aspect of the current
                     state of this API Resource. --- This struct is intended for direct
@@ -177,9 +103,6 @@ spec:
                   - type
                   type: object
                 type: array
-              observedGeneration:
-                format: int64
-                type: integer
             type: object
         type: object
     served: true
