@@ -23,7 +23,7 @@ import (
 
 	kptoci "github.com/GoogleContainerTools/kpt/pkg/oci"
 	configapi "github.com/GoogleContainerTools/kpt/porch/api/porchconfig/v1alpha1"
-	"github.com/GoogleContainerTools/kpt/porch/pkg/git"
+	gitrepository "github.com/GoogleContainerTools/kpt/porch/pkg/git/repository"
 	"github.com/GoogleContainerTools/kpt/porch/pkg/meta"
 	"github.com/GoogleContainerTools/kpt/porch/pkg/oci"
 	"github.com/GoogleContainerTools/kpt/porch/pkg/repository"
@@ -124,13 +124,13 @@ func (c *Cache) OpenRepository(ctx context.Context, repositorySpec *configapi.Re
 
 		cr := c.repositories[key]
 		if cr == nil {
-			var mbs git.MainBranchStrategy
+			var mbs gitrepository.MainBranchStrategy
 			if gitSpec.CreateBranch {
-				mbs = git.CreateIfMissing
+				mbs = gitrepository.CreateIfMissing
 			} else {
-				mbs = git.ErrorIfMissing
+				mbs = gitrepository.ErrorIfMissing
 			}
-			if r, err := git.OpenRepository(ctx, repositorySpec.Name, repositorySpec.Namespace, gitSpec, repositorySpec.Spec.Deployment, filepath.Join(c.cacheDir, "git"), git.GitRepositoryOptions{
+			if r, err := gitrepository.OpenRepository(ctx, repositorySpec.Name, repositorySpec.Namespace, gitSpec, repositorySpec.Spec.Deployment, filepath.Join(c.cacheDir, "git"), gitrepository.GitRepositoryOptions{
 				CredentialResolver: c.credentialResolver,
 				UserInfoProvider:   c.userInfoProvider,
 				MainBranchStrategy: mbs,

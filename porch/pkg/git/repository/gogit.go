@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package git
+package repository
 
 import (
 	"github.com/go-git/go-billy/v5/osfs"
@@ -65,7 +65,7 @@ func initializeOrigin(repo *git.Repository, address string) error {
 	cfg.Remotes[OriginName] = &config.RemoteConfig{
 		Name:  OriginName,
 		URLs:  []string{address},
-		Fetch: defaultFetchSpec,
+		Fetch: DefaultFetchSpec,
 	}
 
 	if err := repo.SetConfig(cfg); err != nil {

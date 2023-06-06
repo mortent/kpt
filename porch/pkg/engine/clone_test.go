@@ -29,7 +29,7 @@ import (
 	"time"
 
 	"github.com/GoogleContainerTools/kpt/porch/api/porch/v1alpha1"
-	"github.com/GoogleContainerTools/kpt/porch/pkg/git"
+	gittesting "github.com/GoogleContainerTools/kpt/porch/pkg/git/testing"
 	"github.com/GoogleContainerTools/kpt/porch/pkg/repository"
 	"github.com/go-git/go-billy/v5/memfs"
 	gogit "github.com/go-git/go-git/v5"
@@ -115,14 +115,14 @@ func createRepoWithContents(t *testing.T, contentDir string) *gogit.Repository {
 	return repo
 }
 
-func startGitServer(t *testing.T, repo *git.Repo, opts ...git.GitServerOption) string {
+func startGitServer(t *testing.T, repo *gittesting.Repo, opts ...gittesting.GitServerOption) string {
 	key := "default"
-	repos := git.NewStaticRepos()
+	repos := gittesting.NewStaticRepos()
 	if err := repos.Add(key, repo); err != nil {
 		t.Fatalf("repos.Add failed: %v", err)
 	}
 
-	server, err := git.NewGitServer(repos)
+	server, err := gittesting.NewGitServer(repos)
 	if err != nil {
 		t.Fatalf("Failed to create git server: %v", err)
 	}
@@ -213,7 +213,7 @@ func TestCloneGitBasicAuth(t *testing.T) {
 	auth := randomCredentials()
 	gogitRepo := createRepoWithContents(t, testdata)
 
-	repo, err := git.NewRepo(gogitRepo, git.WithBasicAuth(auth.username, auth.password))
+	repo, err := gittesting.NewRepo(gogitRepo, gittesting.WithBasicAuth(auth.username, auth.password))
 	if err != nil {
 		t.Fatalf("NewRepo failed: %v", err)
 	}

@@ -24,7 +24,7 @@ import (
 	api "github.com/GoogleContainerTools/kpt/porch/api/porch/v1alpha1"
 	"github.com/GoogleContainerTools/kpt/porch/api/porchconfig/v1alpha1"
 	fakecache "github.com/GoogleContainerTools/kpt/porch/pkg/cache/fake"
-	"github.com/GoogleContainerTools/kpt/porch/pkg/git"
+	gitrepository "github.com/GoogleContainerTools/kpt/porch/pkg/git/repository"
 	"github.com/GoogleContainerTools/kpt/porch/pkg/meta"
 	fakemeta "github.com/GoogleContainerTools/kpt/porch/pkg/meta/fake"
 	"github.com/GoogleContainerTools/kpt/porch/pkg/repository"
@@ -131,7 +131,7 @@ func openRepositoryFromArchive(t *testing.T, ctx context.Context, testPath, name
 
 	tempdir := t.TempDir()
 	tarfile := filepath.Join(testPath, fmt.Sprintf("%s-repository.tar", name))
-	repo, address := git.ServeGitRepository(t, tarfile, tempdir)
+	repo, address := gitrepository.ServeGitRepository(t, tarfile, tempdir)
 	metadataStore := createMetadataStoreFromArchive(t, "", "")
 
 	cache := NewCache(t.TempDir(), CacheOptions{

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package git
+package repository
 
 import (
 	"fmt"
@@ -24,6 +24,9 @@ import (
 )
 
 const (
+	DefaultMainReferenceName plumbing.ReferenceName = "refs/heads/main"
+	OriginName               string                 = "origin"
+
 	MainBranch BranchName = "main"
 
 	branchPrefixInLocalRepo  = "refs/remotes/" + OriginName + "/"
@@ -51,7 +54,7 @@ var (
 	// The default fetch spec contains both branches and tags.
 	// This enables push of a tag which will automatically update
 	// its local reference, avoiding explicitly setting of refs.
-	defaultFetchSpec []config.RefSpec = []config.RefSpec{
+	DefaultFetchSpec []config.RefSpec = []config.RefSpec{
 		branchRefSpec,
 		tagRefSpec,
 	}
@@ -148,7 +151,7 @@ func createFinalTagNameInLocal(pkg, rev string) plumbing.ReferenceName {
 }
 
 func refInLocalFromRefInRemote(n plumbing.ReferenceName) (plumbing.ReferenceName, error) {
-	return translateReference(n, defaultFetchSpec)
+	return translateReference(n, DefaultFetchSpec)
 }
 
 func refInRemoteFromRefInLocal(n plumbing.ReferenceName) (plumbing.ReferenceName, error) {

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package git
+package repository
 
 import (
 	"context"
@@ -29,8 +29,8 @@ import (
 
 func TestPackageCommitEmptyRepo(t *testing.T) {
 	tempdir := t.TempDir()
-	gitRepo := OpenGitRepositoryFromArchive(t, filepath.Join("testdata", "empty-repository.tar"), tempdir)
-	repo := &gitRepository{
+	gitRepo := OpenGitRepositoryFromArchive(t, filepath.Join("..", "testdata", "empty-repository.tar"), tempdir)
+	repo := &GitRepository{
 		repo: gitRepo,
 	}
 
@@ -87,8 +87,8 @@ func TestPackageCommitEmptyRepo(t *testing.T) {
 
 func TestPackageCommitToMain(t *testing.T) {
 	tempdir := t.TempDir()
-	gitRepo := OpenGitRepositoryFromArchive(t, filepath.Join("testdata", "drafts-repository.tar"), tempdir)
-	repo := &gitRepository{
+	gitRepo := OpenGitRepositoryFromArchive(t, filepath.Join("..", "testdata", "drafts-repository.tar"), tempdir)
+	repo := &GitRepository{
 		repo: gitRepo,
 	}
 
@@ -146,8 +146,8 @@ func (p *testUserInfoProvider) GetUserInfo(ctx context.Context) *repository.User
 
 func TestCommitWithUser(t *testing.T) {
 	tempdir := t.TempDir()
-	gitRepo := OpenGitRepositoryFromArchive(t, filepath.Join("testdata", "trivial-repository.tar"), tempdir)
-	repo := &gitRepository{
+	gitRepo := OpenGitRepositoryFromArchive(t, filepath.Join("..", "testdata", "trivial-repository.tar"), tempdir)
+	repo := &GitRepository{
 		repo: gitRepo,
 	}
 

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package git
+package repository
 
 import (
 	"context"
@@ -29,7 +29,7 @@ import (
 
 func (g GitSuite) TestLock(t *testing.T) {
 	tempdir := t.TempDir()
-	tarfile := filepath.Join("testdata", "drafts-repository.tar")
+	tarfile := filepath.Join("..", "testdata", "drafts-repository.tar")
 	repo, address := ServeGitRepositoryWithBranch(t, tarfile, tempdir, g.branch)
 
 	ctx := context.Background()

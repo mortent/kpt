@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package git
+package repository
 
 import (
 	"archive/tar"
@@ -24,6 +24,7 @@ import (
 	"sync"
 	"testing"
 
+	gittesting "github.com/GoogleContainerTools/kpt/porch/pkg/git/testing"
 	"github.com/GoogleContainerTools/kpt/porch/pkg/repository"
 	gogit "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -124,19 +125,19 @@ func ServeGitRepository(t *testing.T, tarfile, tempdir string) (*gogit.Repositor
 func ServeExistingRepository(t *testing.T, git *gogit.Repository) string {
 	t.Helper()
 
-	repo, err := NewRepo(git)
+	repo, err := gittesting.NewRepo(git)
 	if err != nil {
 		t.Fatalf("NewRepo failed: %v", err)
 	}
 
 	key := "default"
 
-	repos := NewStaticRepos()
+	repos := gittesting.NewStaticRepos()
 	if err := repos.Add(key, repo); err != nil {
 		t.Fatalf("repos.Add failed: %v", err)
 	}
 
-	server, err := NewGitServer(repos)
+	server, err := gittesting.NewGitServer(repos)
 	if err != nil {
 		t.Fatalf("NewGitServer() failed: %v", err)
 	}
@@ -287,7 +288,7 @@ func packageMustNotExist(t *testing.T, revisions []repository.PackageRevision, k
 	}
 }
 
-func repositoryMustHavePackageRevision(t *testing.T, git GitRepository, name repository.PackageRevisionKey) {
+func repositoryMustHavePackageRevision(t *testing.T, git *GitRepository, name repository.PackageRevisionKey) {
 	t.Helper()
 
 	list, err := git.ListPackageRevisions(context.Background(), repository.ListPackageRevisionFilter{})
@@ -297,7 +298,7 @@ func repositoryMustHavePackageRevision(t *testing.T, git GitRepository, name rep
 	findPackageRevision(t, list, name)
 }
 
-func repositoryMustNotHavePackageRevision(t *testing.T, git GitRepository, name repository.PackageRevisionKey) {
+func repositoryMustNotHavePackageRevision(t *testing.T, git *GitRepository, name repository.PackageRevisionKey) {
 	t.Helper()
 
 	list, err := git.ListPackageRevisions(context.Background(), repository.ListPackageRevisionFilter{})

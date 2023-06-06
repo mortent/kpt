@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package git
+package repository
 
 import (
 	"fmt"
@@ -29,7 +29,7 @@ import (
 
 func TestUpdateRef(t *testing.T) {
 	gitdir := t.TempDir()
-	repo := OpenGitRepositoryFromArchiveWithWorktree(t, filepath.Join("testdata", "drafts-repository.tar"), gitdir)
+	repo := OpenGitRepositoryFromArchiveWithWorktree(t, filepath.Join("..", "testdata", "drafts-repository.tar"), gitdir)
 
 	const draftReferenceName plumbing.ReferenceName = "refs/heads/drafts/bucket/v1"
 
@@ -60,7 +60,7 @@ func TestUpdateRef(t *testing.T) {
 
 func TestSetNewRef(t *testing.T) {
 	temp := t.TempDir()
-	repo := OpenGitRepositoryFromArchive(t, filepath.Join("testdata", "simple-repository.tar"), temp)
+	repo := OpenGitRepositoryFromArchive(t, filepath.Join("..", "testdata", "simple-repository.tar"), temp)
 
 	logRefs(t, repo, "Simple: ")
 
@@ -83,7 +83,7 @@ func TestSetNewRef(t *testing.T) {
 func TestSimpleFetch(t *testing.T) {
 	upstreamDir := t.TempDir()
 	downstreamDir := t.TempDir()
-	upstream, address := ServeGitRepository(t, filepath.Join("testdata", "drafts-repository.tar"), upstreamDir)
+	upstream, address := ServeGitRepository(t, filepath.Join("..", "testdata", "drafts-repository.tar"), upstreamDir)
 	downstream := initRepositoryWithRemote(t, downstreamDir, address)
 
 	const remoteDraftReferenceName = "refs/remotes/origin/drafts/bucket/v1"
@@ -104,7 +104,7 @@ func TestSimplePush(t *testing.T) {
 	upstreamDir := t.TempDir()
 	downstreamDir := t.TempDir()
 
-	upstream, address := ServeGitRepository(t, filepath.Join("testdata", "drafts-repository.tar"), upstreamDir)
+	upstream, address := ServeGitRepository(t, filepath.Join("..", "testdata", "drafts-repository.tar"), upstreamDir)
 	downstream := initRepositoryWithRemote(t, downstreamDir, address)
 	fetch(t, downstream)
 
@@ -174,7 +174,7 @@ func TestSimplePush(t *testing.T) {
 func TestFinalPush(t *testing.T) {
 	upstreamDir := t.TempDir()
 	downstreamDir := t.TempDir()
-	upstream, address := ServeGitRepository(t, filepath.Join("testdata", "drafts-repository.tar"), upstreamDir)
+	upstream, address := ServeGitRepository(t, filepath.Join("..", "testdata", "drafts-repository.tar"), upstreamDir)
 	downstream := initRepositoryWithRemote(t, downstreamDir, address)
 
 	fetch(t, downstream)
@@ -265,7 +265,7 @@ func TestFinalPush(t *testing.T) {
 func TestRepoRecovery(t *testing.T) {
 	upstreamDir := t.TempDir()
 	downstreamDir := t.TempDir()
-	upstream, address := ServeGitRepository(t, filepath.Join("testdata", "drafts-repository.tar"), upstreamDir)
+	upstream, address := ServeGitRepository(t, filepath.Join("..", "testdata", "drafts-repository.tar"), upstreamDir)
 	downstream := initRepositoryWithRemote(t, downstreamDir, address)
 
 	const (
@@ -337,7 +337,7 @@ func TestRepoRecovery(t *testing.T) {
 func TestProposal(t *testing.T) {
 	upstreamDir := t.TempDir()
 	downstreamDir := t.TempDir()
-	upstream, address := ServeGitRepository(t, filepath.Join("testdata", "drafts-repository.tar"), upstreamDir)
+	upstream, address := ServeGitRepository(t, filepath.Join("..", "testdata", "drafts-repository.tar"), upstreamDir)
 	downstream := initRepositoryWithRemote(t, downstreamDir, address)
 
 	fetch(t, downstream)
@@ -381,7 +381,7 @@ func TestProposal(t *testing.T) {
 func TestDeleteUpstreamBranches(t *testing.T) {
 	upstreamDir := t.TempDir()
 	downstreamDir := t.TempDir()
-	upstream, address := ServeGitRepository(t, filepath.Join("testdata", "drafts-repository.tar"), upstreamDir)
+	upstream, address := ServeGitRepository(t, filepath.Join("..", "testdata", "drafts-repository.tar"), upstreamDir)
 	downstream := initRepositoryWithRemote(t, downstreamDir, address)
 
 	logRefs(t, downstream, "Init: ")
@@ -431,7 +431,7 @@ func initRepositoryWithRemote(t *testing.T, dir, address string) *git.Repository
 	if _, err := repo.CreateRemote(&config.RemoteConfig{
 		Name:  OriginName,
 		URLs:  []string{address},
-		Fetch: defaultFetchSpec,
+		Fetch: DefaultFetchSpec,
 	}); err != nil {
 		t.Fatalf("CreateRemote failed: %v", err)
 	}

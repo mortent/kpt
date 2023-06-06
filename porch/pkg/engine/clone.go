@@ -25,7 +25,7 @@ import (
 	v1 "github.com/GoogleContainerTools/kpt/pkg/api/kptfile/v1"
 	api "github.com/GoogleContainerTools/kpt/porch/api/porch/v1alpha1"
 	configapi "github.com/GoogleContainerTools/kpt/porch/api/porchconfig/v1alpha1"
-	"github.com/GoogleContainerTools/kpt/porch/pkg/git"
+	gitrepository "github.com/GoogleContainerTools/kpt/porch/pkg/git/repository"
 	"github.com/GoogleContainerTools/kpt/porch/pkg/kpt"
 	"github.com/GoogleContainerTools/kpt/porch/pkg/repository"
 	"go.opentelemetry.io/otel/trace"
@@ -153,9 +153,9 @@ func (m *clonePackageMutation) cloneFromGit(ctx context.Context, gitPackage *api
 	}
 	defer os.RemoveAll(dir)
 
-	r, err := git.OpenRepository(ctx, "", "", &spec, false, dir, git.GitRepositoryOptions{
+	r, err := gitrepository.OpenRepository(ctx, "", "", &spec, false, dir, gitrepository.GitRepositoryOptions{
 		CredentialResolver: m.credentialResolver,
-		MainBranchStrategy: git.SkipVerification, // We are only reading so we don't need the main branch to exist.
+		MainBranchStrategy: gitrepository.SkipVerification, // We are only reading so we don't need the main branch to exist.
 	})
 	if err != nil {
 		return repository.PackageResources{}, fmt.Errorf("cannot clone Git repository: %w", err)

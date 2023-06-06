@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package git
+package repository
 
 import (
 	"context"
@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/GoogleContainerTools/kpt/porch/api/porch/v1alpha1"
+	"github.com/GoogleContainerTools/kpt/porch/pkg/git/packagerevision"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -30,7 +31,7 @@ import (
 // packageList holds a list of packages in the git repository
 type packageList struct {
 	// parent is the gitRepository of which this is part
-	parent *gitRepository
+	parent *GitRepository
 
 	// commit is the commit at which we scanned for packages
 	commit *object.Commit
@@ -53,7 +54,7 @@ type packageListEntry struct {
 
 // buildGitPackageRevision creates a gitPackageRevision for the packageListEntry
 // TODO: Can packageListEntry just _be_ a gitPackageRevision?
-func (p *packageListEntry) buildGitPackageRevision(ctx context.Context, revision string, workspace v1alpha1.WorkspaceName, ref *plumbing.Reference) (*gitPackageRevision, error) {
+func (p *packageListEntry) buildGitPackageRevision(ctx context.Context, revision string, workspace v1alpha1.WorkspaceName, ref *plumbing.Reference) (*packagerevision.GitPackageRevision, error) {
 	repo := p.parent.parent
 	tasks, err := repo.loadTasks(ctx, p.parent.commit, p.path, workspace)
 	if err != nil {
@@ -95,18 +96,18 @@ func (p *packageListEntry) buildGitPackageRevision(ctx context.Context, revision
 		workspace = v1alpha1.WorkspaceName(revision)
 	}
 
-	return &gitPackageRevision{
-		repo:          repo,
-		path:          p.path,
-		workspaceName: workspace,
-		revision:      revision,
-		updated:       updated,
-		updatedBy:     updatedBy,
-		ref:           ref,
-		tree:          p.treeHash,
-		commit:        p.parent.commit.Hash,
-		tasks:         tasks,
-	}, nil
+	return packagerevision.NewGitPackageRevision(
+		repo,
+		p.path,
+		revision,
+		workspace,
+		updated,
+		updatedBy,
+		ref,
+		p.treeHash,
+		p.parent.commit.Hash,
+		tasks,
+	), nil
 }
 
 // DiscoveryPackagesOptions holds the configuration for walking a git tree

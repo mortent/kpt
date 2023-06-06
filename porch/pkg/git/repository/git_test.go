@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package git
+package repository
 
 import (
 	"bytes"
@@ -77,7 +77,7 @@ type GitSuite struct {
 
 func (g GitSuite) TestOpenEmptyRepository(t *testing.T) {
 	tempdir := t.TempDir()
-	tarfile := filepath.Join("testdata", "empty-repository.tar")
+	tarfile := filepath.Join("..", "testdata", "empty-repository.tar")
 	repo, address := ServeGitRepositoryWithBranch(t, tarfile, tempdir, g.branch)
 
 	ctx := context.Background()
@@ -358,7 +358,7 @@ info:
 
 func (g GitSuite) TestListPackagesTrivial(t *testing.T) {
 	tempdir := t.TempDir()
-	tarfile := filepath.Join("testdata", "trivial-repository.tar")
+	tarfile := filepath.Join("..", "testdata", "trivial-repository.tar")
 	_, address := ServeGitRepositoryWithBranch(t, tarfile, tempdir, g.branch)
 
 	ctx := context.Background()
@@ -446,7 +446,7 @@ func (g GitSuite) TestListPackagesTrivial(t *testing.T) {
 // trivial-repository.tar has a repon with a `main` branch and a single empty commit.
 func (g GitSuite) TestCreatePackageInTrivialRepository(t *testing.T) {
 	tempdir := t.TempDir()
-	tarfile := filepath.Join("testdata", "trivial-repository.tar")
+	tarfile := filepath.Join("..", "testdata", "trivial-repository.tar")
 	_, address := ServeGitRepositoryWithBranch(t, tarfile, tempdir, g.branch)
 
 	ctx := context.Background()
@@ -522,7 +522,7 @@ func (g GitSuite) TestCreatePackageInTrivialRepository(t *testing.T) {
 
 func (g GitSuite) TestListPackagesSimple(t *testing.T) {
 	tempdir := t.TempDir()
-	tarfile := filepath.Join("testdata", "simple-repository.tar")
+	tarfile := filepath.Join("..", "testdata", "simple-repository.tar")
 	_, address := ServeGitRepositoryWithBranch(t, tarfile, tempdir, g.branch)
 
 	ctx := context.Background()
@@ -583,7 +583,7 @@ func (g GitSuite) TestListPackagesSimple(t *testing.T) {
 
 func (g GitSuite) TestListPackagesDrafts(t *testing.T) {
 	tempdir := t.TempDir()
-	tarfile := filepath.Join("testdata", "drafts-repository.tar")
+	tarfile := filepath.Join("..", "testdata", "drafts-repository.tar")
 	_, address := ServeGitRepositoryWithBranch(t, tarfile, tempdir, g.branch)
 
 	ctx := context.Background()
@@ -646,7 +646,7 @@ func (g GitSuite) TestListPackagesDrafts(t *testing.T) {
 
 func (g GitSuite) TestApproveDraft(t *testing.T) {
 	tempdir := t.TempDir()
-	tarfile := filepath.Join("testdata", "drafts-repository.tar")
+	tarfile := filepath.Join("..", "testdata", "drafts-repository.tar")
 	repo, address := ServeGitRepositoryWithBranch(t, tarfile, tempdir, g.branch)
 
 	const (
@@ -708,7 +708,7 @@ func (g GitSuite) TestApproveDraft(t *testing.T) {
 
 func (g GitSuite) TestApproveDraftWithHistory(t *testing.T) {
 	tempdir := t.TempDir()
-	tarfile := filepath.Join("testdata", "drafts-repository.tar")
+	tarfile := filepath.Join("..", "testdata", "drafts-repository.tar")
 	repo, address := ServeGitRepositoryWithBranch(t, tarfile, tempdir, g.branch)
 
 	const (
@@ -773,7 +773,7 @@ func (g GitSuite) TestApproveDraftWithHistory(t *testing.T) {
 
 func (g GitSuite) TestDeletePackages(t *testing.T) {
 	tempdir := t.TempDir()
-	tarfile := filepath.Join("testdata", "drafts-repository.tar")
+	tarfile := filepath.Join("..", "testdata", "drafts-repository.tar")
 	repo, address := ServeGitRepositoryWithBranch(t, tarfile, tempdir, g.branch)
 
 	const (
@@ -877,7 +877,7 @@ func (g GitSuite) TestDeletePackages(t *testing.T) {
 func (g GitSuite) TestRefreshRepo(t *testing.T) {
 	upstreamDir := t.TempDir()
 	downstreamDir := t.TempDir()
-	tarfile := filepath.Join("testdata", "simple-repository.tar")
+	tarfile := filepath.Join("..", "testdata", "simple-repository.tar")
 	upstream := OpenGitRepositoryFromArchiveWithWorktree(t, tarfile, upstreamDir)
 	InitializeBranch(t, upstream, g.branch)
 	address := ServeExistingRepository(t, upstream)
@@ -968,7 +968,7 @@ func (g GitSuite) TestRefreshRepo(t *testing.T) {
 // pruned in the registered repository on refresh.
 func (g GitSuite) TestPruneRemotes(t *testing.T) {
 	tempdir := t.TempDir()
-	tarfile := filepath.Join("testdata", "drafts-repository.tar")
+	tarfile := filepath.Join("..", "testdata", "drafts-repository.tar")
 	repo, address := ServeGitRepositoryWithBranch(t, tarfile, tempdir, g.branch)
 
 	const (
@@ -1030,7 +1030,7 @@ func (g GitSuite) TestPruneRemotes(t *testing.T) {
 
 func (g GitSuite) TestNested(t *testing.T) {
 	tempdir := t.TempDir()
-	tarfile := filepath.Join("testdata", "nested-repository.tar")
+	tarfile := filepath.Join("..", "testdata", "nested-repository.tar")
 	repo, address := ServeGitRepositoryWithBranch(t, tarfile, tempdir, g.branch)
 
 	ctx := context.Background()
@@ -1150,7 +1150,7 @@ func (g GitSuite) TestNestedDirectories(t *testing.T) {
 	} {
 		t.Run(tc.directory, func(t *testing.T) {
 			tempdir := t.TempDir()
-			tarfile := filepath.Join("testdata", "nested-repository.tar")
+			tarfile := filepath.Join("..", "testdata", "nested-repository.tar")
 			_, address := ServeGitRepositoryWithBranch(t, tarfile, tempdir, g.branch)
 
 			const (
@@ -1226,7 +1226,7 @@ func (g GitSuite) TestAuthor(t *testing.T) {
 		tc := testCases[tn]
 		t.Run(tn, func(t *testing.T) {
 			tempdir := t.TempDir()
-			tarfile := filepath.Join("testdata", "publishinfo-repository.tar")
+			tarfile := filepath.Join("..", "testdata", "publishinfo-repository.tar")
 			_, address := ServeGitRepositoryWithBranch(t, tarfile, tempdir, g.branch)
 
 			const (

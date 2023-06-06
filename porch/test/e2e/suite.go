@@ -34,7 +34,7 @@ import (
 	porchapi "github.com/GoogleContainerTools/kpt/porch/api/porch/v1alpha1"
 	configapi "github.com/GoogleContainerTools/kpt/porch/api/porchconfig/v1alpha1"
 	internalapi "github.com/GoogleContainerTools/kpt/porch/internal/api/porchinternal/v1alpha1"
-	"github.com/GoogleContainerTools/kpt/porch/pkg/git"
+	gittesting "github.com/GoogleContainerTools/kpt/porch/pkg/git/testing"
 	"github.com/GoogleContainerTools/kpt/porch/pkg/repository"
 	gogit "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -345,10 +345,10 @@ func createLocalGitServer(t *testing.T) GitConfig {
 		}
 	})
 
-	var gitRepoOptions []git.GitRepoOption
-	repos := git.NewDynamicRepos(tmp, gitRepoOptions)
+	var gitRepoOptions []gittesting.GitRepoOption
+	repos := gittesting.NewDynamicRepos(tmp, gitRepoOptions)
 
-	server, err := git.NewGitServer(repos)
+	server, err := gittesting.NewGitServer(repos)
 	if err != nil {
 		t.Fatalf("Failed to start git server: %v", err)
 		return GitConfig{}

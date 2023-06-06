@@ -23,7 +23,7 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/GoogleContainerTools/kpt/porch/pkg/git"
+	gittesting "github.com/GoogleContainerTools/kpt/porch/pkg/git/testing"
 	"k8s.io/klog/v2"
 )
 
@@ -59,10 +59,10 @@ func run(dirs []string) error {
 		return fmt.Errorf("can serve only one git repository, not %d", len(dirs))
 	}
 
-	var gitRepoOptions []git.GitRepoOption
-	repos := git.NewDynamicRepos(baseDir, gitRepoOptions)
+	var gitRepoOptions []gittesting.GitRepoOption
+	repos := gittesting.NewDynamicRepos(baseDir, gitRepoOptions)
 
-	server, err := git.NewGitServer(repos)
+	server, err := gittesting.NewGitServer(repos)
 	if err != nil {
 		return fmt.Errorf("filed to initialize git server: %w", err)
 	}

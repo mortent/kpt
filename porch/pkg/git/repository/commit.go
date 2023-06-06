@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package git
+package repository
 
 import (
 	"context"
@@ -36,7 +36,7 @@ const (
 )
 
 type commitHelper struct {
-	repository *gitRepository
+	repository *GitRepository
 
 	// trees holds a map of all the tree objects we are writing to.
 	// We reuse the existing object.Tree structures.
@@ -52,7 +52,7 @@ type commitHelper struct {
 
 // if packageTree is zero, new tree for the package will be created (effectively replacing the package with the subsequently provided
 // contents). If the packageTree is provided, the tree will be used as the initial package contents, possibly subsequently modified.
-func newCommitHelper(repo *gitRepository, userInfoProvider repository.UserInfoProvider,
+func newCommitHelper(repo *GitRepository, userInfoProvider repository.UserInfoProvider,
 	parentCommitHash plumbing.Hash, packagePath string, packageTree plumbing.Hash) (*commitHelper, error) {
 	var root *object.Tree
 
@@ -89,7 +89,7 @@ func newCommitHelper(repo *gitRepository, userInfoProvider repository.UserInfoPr
 // Initializes ancestor trees of the package, reading them from the storer.
 // If packageTree hash is provided, it will be used as the package's initial tree. Otherwise, new tree will be used
 // (effectively replacing the package with an empty one).
-func initializeTrees(repo *gitRepository, root *object.Tree, packagePath string,
+func initializeTrees(repo *GitRepository, root *object.Tree, packagePath string,
 	packageTreeHash plumbing.Hash) (map[string]*object.Tree, error) {
 
 	trees := map[string]*object.Tree{

@@ -12,13 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package git
+package packagerevision
 
 import (
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -27,17 +26,55 @@ import (
 	"github.com/GoogleContainerTools/kpt/internal/pkg"
 	kptfile "github.com/GoogleContainerTools/kpt/pkg/api/kptfile/v1"
 	"github.com/GoogleContainerTools/kpt/porch/api/porch/v1alpha1"
+	"github.com/GoogleContainerTools/kpt/porch/pkg/git/util"
 	"github.com/GoogleContainerTools/kpt/porch/pkg/repository"
-	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 )
 
-type gitPackageRevision struct {
-	repo          *gitRepository // repo is repo containing the package
-	path          string         // the path to the package from the repo root
+type gitRepository interface {
+	Branch() string
+	Name() string
+	Namespace() string
+	Directory() string
+	Deployment() bool
+	GetResources(hash plumbing.Hash) (map[string]string, error)
+	GetRepo() (string, error)
+	GetLifecycle(ctx context.Context, pkgRev *GitPackageRevision) v1alpha1.PackageRevisionLifecycle
+	UpdateLifecycle(ctx context.Context, pkgRev *GitPackageRevision, newLifecycle v1alpha1.PackageRevisionLifecycle) error
+}
+
+func NewGitPackageRevision(
+	repo gitRepository,
+	path string,
+	revision string,
+	workspace v1alpha1.WorkspaceName,
+	updated time.Time,
+	updatedBy string,
+	ref *plumbing.Reference,
+	tree plumbing.Hash,
+	commit plumbing.Hash,
+	tasks []v1alpha1.Task,
+) *GitPackageRevision {
+	return &GitPackageRevision{
+		repo:          repo,
+		path:          path,
+		revision:      revision,
+		workspaceName: workspace,
+		updated:       updated,
+		updatedBy:     updatedBy,
+		ref:           ref,
+		tree:          tree,
+		commit:        commit,
+		tasks:         tasks,
+	}
+}
+
+type GitPackageRevision struct {
+	repo          gitRepository // repo is repo containing the package
+	path          string        // the path to the package from the repo root
 	revision      string
 	workspaceName v1alpha1.WorkspaceName
 	updated       time.Time
@@ -48,7 +85,7 @@ type gitPackageRevision struct {
 	tasks         []v1alpha1.Task
 }
 
-var _ repository.PackageRevision = &gitPackageRevision{}
+var _ repository.PackageRevision = &GitPackageRevision{}
 
 // Kubernetes resource names requirements do not allow to encode arbitrary directory
 // path: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
@@ -58,34 +95,34 @@ var _ repository.PackageRevision = &gitPackageRevision{}
 // name in order to aide package discovery on the server. With improvements to caching
 // layer, the prefix will be removed (this may happen without notice) so it should not
 // be relied upon by clients.
-func (p *gitPackageRevision) KubeObjectName() string {
+func (p *GitPackageRevision) KubeObjectName() string {
 	// The published package revisions on the main branch will have the same workspaceName
 	// as the most recently published package revision, so we need to ensure it has a unique
 	// and unchanging name.
 	var s string
-	if p.revision == string(p.repo.branch) {
+	if p.revision == string(p.repo.Branch()) {
 		s = p.revision
 	} else {
 		s = string(p.workspaceName)
 	}
-	hash := sha1.Sum([]byte(fmt.Sprintf("%s:%s:%s", p.repo.name, p.path, s)))
-	return p.repo.name + "-" + hex.EncodeToString(hash[:])
+	hash := sha1.Sum([]byte(fmt.Sprintf("%s:%s:%s", p.repo.Name(), p.path, s)))
+	return p.repo.Name() + "-" + hex.EncodeToString(hash[:])
 }
 
-func (p *gitPackageRevision) KubeObjectNamespace() string {
-	return p.repo.namespace
+func (p *GitPackageRevision) KubeObjectNamespace() string {
+	return p.repo.Namespace()
 }
 
-func (p *gitPackageRevision) UID() types.UID {
+func (p *GitPackageRevision) UID() types.UID {
 	return p.uid()
 }
 
-func (p *gitPackageRevision) Key() repository.PackageRevisionKey {
+func (p *GitPackageRevision) Key() repository.PackageRevisionKey {
 	// if the repository has been registered with a directory, then the
 	// package name is the package path relative to the registered directory
 	packageName := p.path
-	if p.repo.directory != "" {
-		pn, err := filepath.Rel(p.repo.directory, packageName)
+	if p.repo.Directory() != "" {
+		pn, err := filepath.Rel(p.repo.Directory(), packageName)
 		if err != nil {
 			klog.Errorf("error computing package name relative to registered directory: %w", err)
 		}
@@ -93,16 +130,48 @@ func (p *gitPackageRevision) Key() repository.PackageRevisionKey {
 	}
 
 	return repository.PackageRevisionKey{
-		Repository:    p.repo.name,
+		Repository:    p.repo.Name(),
 		Package:       packageName,
 		Revision:      p.revision,
 		WorkspaceName: p.workspaceName,
 	}
 }
 
-func (p *gitPackageRevision) uid() types.UID {
+func (p *GitPackageRevision) Ref() *plumbing.Reference {
+	return p.ref
+}
+
+func (p *GitPackageRevision) Path() string {
+	return p.path
+}
+
+func (p *GitPackageRevision) Revision() string {
+	return p.revision
+}
+
+func (p *GitPackageRevision) WorkspaceName() string {
+	return string(p.workspaceName)
+}
+
+func (p *GitPackageRevision) Updated() time.Time {
+	return p.updated
+}
+
+func (p *GitPackageRevision) Tree() plumbing.Hash {
+	return p.tree
+}
+
+func (p *GitPackageRevision) Commit() plumbing.Hash {
+	return p.commit
+}
+
+func (p *GitPackageRevision) Tasks() []v1alpha1.Task {
+	return p.tasks
+}
+
+func (p *GitPackageRevision) uid() types.UID {
 	var s string
-	if p.revision == string(p.repo.branch) {
+	if p.revision == string(p.repo.Branch()) {
 		s = p.revision
 	} else {
 		s = string(p.workspaceName)
@@ -110,7 +179,7 @@ func (p *gitPackageRevision) uid() types.UID {
 	return types.UID(fmt.Sprintf("uid:%s:%s", p.path, s))
 }
 
-func (p *gitPackageRevision) GetPackageRevision(ctx context.Context) (*v1alpha1.PackageRevision, error) {
+func (p *GitPackageRevision) GetPackageRevision(ctx context.Context) (*v1alpha1.PackageRevision, error) {
 	key := p.Key()
 
 	_, lock, _ := p.GetUpstreamLock(ctx)
@@ -135,7 +204,7 @@ func (p *gitPackageRevision) GetPackageRevision(ctx context.Context) (*v1alpha1.
 
 	status := v1alpha1.PackageRevisionStatus{
 		UpstreamLock: lockCopy,
-		Deployment:   p.repo.deployment,
+		Deployment:   p.repo.Deployment(),
 		Conditions:   repository.ToApiConditions(kf),
 	}
 
@@ -155,7 +224,7 @@ func (p *gitPackageRevision) GetPackageRevision(ctx context.Context) (*v1alpha1.
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            p.KubeObjectName(),
-			Namespace:       p.repo.namespace,
+			Namespace:       p.repo.Namespace(),
 			UID:             p.uid(),
 			ResourceVersion: p.commit.String(),
 			CreationTimestamp: metav1.Time{
@@ -175,7 +244,7 @@ func (p *gitPackageRevision) GetPackageRevision(ctx context.Context) (*v1alpha1.
 	}, nil
 }
 
-func (p *gitPackageRevision) GetResources(ctx context.Context) (*v1alpha1.PackageRevisionResources, error) {
+func (p *GitPackageRevision) GetResources(ctx context.Context) (*v1alpha1.PackageRevisionResources, error) {
 	resources, err := p.repo.GetResources(p.tree)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load package resources: %w", err)
@@ -190,7 +259,7 @@ func (p *gitPackageRevision) GetResources(ctx context.Context) (*v1alpha1.Packag
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            p.KubeObjectName(),
-			Namespace:       p.repo.namespace,
+			Namespace:       p.repo.Namespace(),
 			UID:             p.uid(),
 			ResourceVersion: p.commit.String(),
 			CreationTimestamp: metav1.Time{
@@ -209,7 +278,7 @@ func (p *gitPackageRevision) GetResources(ctx context.Context) (*v1alpha1.Packag
 	}, nil
 }
 
-func (p *gitPackageRevision) GetKptfile(ctx context.Context) (kptfile.KptFile, error) {
+func (p *GitPackageRevision) GetKptfile(ctx context.Context) (kptfile.KptFile, error) {
 	resources, err := p.repo.GetResources(p.tree)
 	if err != nil {
 		return kptfile.KptFile{}, fmt.Errorf("error loading package resources: %w", err)
@@ -226,7 +295,7 @@ func (p *gitPackageRevision) GetKptfile(ctx context.Context) (kptfile.KptFile, e
 }
 
 // GetUpstreamLock returns the upstreamLock info present in the Kptfile of the package.
-func (p *gitPackageRevision) GetUpstreamLock(ctx context.Context) (kptfile.Upstream, kptfile.UpstreamLock, error) {
+func (p *GitPackageRevision) GetUpstreamLock(ctx context.Context) (kptfile.Upstream, kptfile.UpstreamLock, error) {
 	kf, err := p.GetKptfile(ctx)
 	if err != nil {
 		return kptfile.Upstream{}, kptfile.UpstreamLock{}, fmt.Errorf("cannot determine package lock; cannot retrieve resources: %w", err)
@@ -242,7 +311,7 @@ func (p *gitPackageRevision) GetUpstreamLock(ctx context.Context) (kptfile.Upstr
 // GetLock returns the self version of the package. Think of it as the Git commit information
 // that represent the package revision of this package. Please note that it uses Upstream types
 // to represent this information but it has no connection with the associated upstream package (if any).
-func (p *gitPackageRevision) GetLock() (kptfile.Upstream, kptfile.UpstreamLock, error) {
+func (p *GitPackageRevision) GetLock() (kptfile.Upstream, kptfile.UpstreamLock, error) {
 	repo, err := p.repo.GetRepo()
 	if err != nil {
 		return kptfile.Upstream{}, kptfile.UpstreamLock{}, fmt.Errorf("cannot determine package lock: %w", err)
@@ -252,7 +321,7 @@ func (p *gitPackageRevision) GetLock() (kptfile.Upstream, kptfile.UpstreamLock, 
 		return kptfile.Upstream{}, kptfile.UpstreamLock{}, fmt.Errorf("cannot determine package lock; package has no ref")
 	}
 
-	ref, err := refInRemoteFromRefInLocal(p.ref.Name())
+	ref, err := util.RefInRemoteFromRefInLocal(p.ref.Name())
 	if err != nil {
 		return kptfile.Upstream{}, kptfile.UpstreamLock{}, fmt.Errorf("cannot determine package lock for %q: %v", p.ref, err)
 	}
@@ -275,71 +344,12 @@ func (p *gitPackageRevision) GetLock() (kptfile.Upstream, kptfile.UpstreamLock, 
 		}, nil
 }
 
-func (p *gitPackageRevision) Lifecycle() v1alpha1.PackageRevisionLifecycle {
-	switch ref := p.ref; {
-	case ref == nil:
-		return p.checkPublishedLifecycle()
-	case isDraftBranchNameInLocal(ref.Name()):
-		return v1alpha1.PackageRevisionLifecycleDraft
-	case isProposedBranchNameInLocal(ref.Name()):
-		return v1alpha1.PackageRevisionLifecycleProposed
-	default:
-		return p.checkPublishedLifecycle()
-	}
-
+func (p *GitPackageRevision) Lifecycle() v1alpha1.PackageRevisionLifecycle {
+	return p.repo.GetLifecycle(context.Background(), p)
 }
 
-func (p *gitPackageRevision) checkPublishedLifecycle() v1alpha1.PackageRevisionLifecycle {
-	if p.repo.deletionProposedCache == nil {
-		if err := p.repo.UpdateDeletionProposedCache(); err != nil {
-			klog.Errorf("failed to update deletionProposed cache: %v", err)
-			return v1alpha1.PackageRevisionLifecyclePublished
-		}
-	}
-
-	branchName := createDeletionProposedName(p.path, p.revision)
-	if _, found := p.repo.deletionProposedCache[branchName]; found {
-		return v1alpha1.PackageRevisionLifecycleDeletionProposed
-	}
-
-	return v1alpha1.PackageRevisionLifecyclePublished
-}
-
-func (p *gitPackageRevision) UpdateLifecycle(ctx context.Context, new v1alpha1.PackageRevisionLifecycle) error {
-	old := p.Lifecycle()
-	if !v1alpha1.LifecycleIsPublished(old) {
-		return fmt.Errorf("cannot update lifecycle for draft package revision")
-	}
-	refSpecs := newPushRefSpecBuilder()
-	deletionProposedBranch := createDeletionProposedName(p.path, p.revision)
-
-	if old == v1alpha1.PackageRevisionLifecyclePublished {
-		if new != v1alpha1.PackageRevisionLifecycleDeletionProposed {
-			return fmt.Errorf("invalid new lifecycle value: %q", new)
-		}
-
-		// Push the package revision into a deletionProposed branch.
-		p.repo.deletionProposedCache[deletionProposedBranch] = true
-		refSpecs.AddRefToPush(p.commit, deletionProposedBranch.RefInLocal())
-	}
-	if old == v1alpha1.PackageRevisionLifecycleDeletionProposed {
-		if new != v1alpha1.PackageRevisionLifecyclePublished {
-			return fmt.Errorf("invalid new lifecycle value: %q", new)
-		}
-
-		// Delete the deletionProposed branch
-		delete(p.repo.deletionProposedCache, deletionProposedBranch)
-		ref := plumbing.NewHashReference(deletionProposedBranch.RefInLocal(), p.commit)
-		refSpecs.AddRefToDelete(ref)
-	}
-
-	if err := p.repo.PushAndCleanup(ctx, refSpecs); err != nil {
-		if !errors.Is(err, git.NoErrAlreadyUpToDate) {
-			return err
-		}
-	}
-
-	return nil
+func (p *GitPackageRevision) UpdateLifecycle(ctx context.Context, new v1alpha1.PackageRevisionLifecycle) error {
+	return p.repo.UpdateLifecycle(ctx, p, new)
 }
 
 // TODO: Define a type `gitPackage` to implement the Repository.Package interface
