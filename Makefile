@@ -204,7 +204,8 @@ release-ci:
 		-w /go/src/github.com/GoogleContainerTools/kpt \
 		$(GORELEASER_IMAGE) \
 		-f "$(GORELEASER_CONFIG)" release \
-		--skip-validate
+		--skip-validate \
+		--skip-publish
 
 .PHONY: vulncheck
 vulncheck: build
