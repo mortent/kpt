@@ -194,6 +194,7 @@ release-ci:
 		echo "\033[91m.release-env is required for release\033[0m";\
 		exit 1;\
 	fi
+	which pass
 	sudo ls -la /root/.docker/
 	sudo cat /root/.docker/config.json
 	sudo rm /root/.docker/config.json
