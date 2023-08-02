@@ -194,7 +194,8 @@ release-ci:
 		echo "\033[91m.release-env is required for release\033[0m";\
 		exit 1;\
 	fi
-	docker run \
+	ls -la /root/.docker/
+	sudo docker run \
 		--rm \
 		--privileged \
 		--env-file .release-env \
