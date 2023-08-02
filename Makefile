@@ -195,6 +195,8 @@ release-ci:
 		exit 1;\
 	fi
 	sudo ls -la /root/.docker/
+	sudo cat /root/.docker/config.json
+	sudo rm /root/.docker/config.json
 	sudo docker run \
 		--rm \
 		--privileged \
